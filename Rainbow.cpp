@@ -5,7 +5,7 @@
 int main(int argc, char* argv[]) {
     SDL_Init(SDL_INIT_VIDEO);
 
-    SDL_Window* window = SDL_CreateWindow("Rainbow Sine Texture",
+    SDL_Window* window = SDL_CreateWindow("Rainbow",
         SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED,
         0, 0, SDL_WINDOW_FULLSCREEN_DESKTOP);
 
