@@ -1,0 +1,565 @@
+#include <iostream>
+#include <vector>
+#include <cmath>
+#include <SDL.h>
+#include <SDL_ttf.h>
+#include <SDL_image.h>
+#include <SDL_mixer.h>
+#include <algorithm>
+#include <chrono>
+#include <cstdlib> 
+#include <ctime>   
+
+#define cout std::cout
+#define cerr std::cerr
+#define endl std::endl
+
+const int SCREEN_WIDTH = 1280;
+const int SCREEN_HEIGHT = 720;
+const int LANE_COUNT = 4;
+const double NOTE_SPEED = 0.005; 
+const int JUDGMENT_LINE_Z = 10;   
+const int Z_MAX = 500;            
+const double ACTION_DURATION = 300.0; 
+const int START_Y_FAR = 150; // **** 修正: 物件生成時的起始 Y 座標 ****
+
+const int PERFECT_MS = 25;
+const int GREAT_MS = 50;
+const int GOOD_MS = 90;
+
+enum Judgment {
+    PERFECT,
+    GREAT,
+    GOOD,
+    MISS
+};
+
+enum NoteType {
+    TAP,
+    HOLD_START,
+    HOLD_END,
+    COLLECTABLE_NOTE 
+};
+
+enum ObjectType {
+    RHYTHM_NOTE,
+    TRACK_OBSTACLE, 
+    TRACK_COLLECT  
+};
+
+enum GameState {
+    MENU,
+    PLAYING,
+    RESULT
+};
+
+struct JudgmentResult {
+    Judgment type;
+    double timeDelta;
+};
+
+class GameObject {
+protected:
+    double z; 
+    int laneIndex; 
+    ObjectType objectType;
+
+public:
+    GameObject(int lane, ObjectType type, double initialZ = Z_MAX) 
+        : laneIndex(lane), objectType(type), z(initialZ) {}
+    virtual ~GameObject() = default;
+
+    void update(double deltaTime) {
+        z -= NOTE_SPEED * deltaTime;
+    }
+
+    void getScreenRect(int& x, int& y, int& w, int& h) const {
+        if (z <= 0) {
+            x = y = w = h = 0; 
+            return;
+        }
+
+        double scale = 1.0 - (z / Z_MAX);
+        if (scale < 0.05) scale = 0.05; 
+        
+        const int LANE_START_X_NEAR = 100; 
+        const int LANE_END_X_NEAR = SCREEN_WIDTH - 100; 
+        const int TOTAL_WIDTH_NEAR = LANE_END_X_NEAR - LANE_START_X_NEAR;
+        const int LANE_SPACING_NEAR = TOTAL_WIDTH_NEAR / LANE_COUNT;
+        
+        const int VANISHING_POINT_X = SCREEN_WIDTH / 2;
+        
+        int lane_center_x_near = LANE_START_X_NEAR + laneIndex * LANE_SPACING_NEAR + LANE_SPACING_NEAR / 2;
+        
+        // X 座標的透視計算
+        double current_center_x = VANISHING_POINT_X * (1.0 - scale) + lane_center_x_near * scale;
+        
+        w = (int)(80 * scale); 
+        h = (int)(40 * scale); 
+        x = (int)current_center_x - w / 2;
+
+        const int JUDGMENT_Y = SCREEN_HEIGHT - 80; // 按鍵區域頂部
+        
+        // Y 座標的透視計算 (從 START_Y_FAR 縮放/移動到 JUDGMENT_Y)
+        int current_center_y = (int)(START_Y_FAR * (1.0 - scale) + JUDGMENT_Y * scale);
+        y = current_center_y - h / 2;
+    }
+
+    double getZ() const { return z; }
+    int getLaneIndex() const { return laneIndex; }
+    ObjectType getType() const { return objectType; }
+};
+
+class RhythmNote : public GameObject {
+private:
+    NoteType noteType;
+    double targetTimeMs; 
+    bool isJudged;
+
+public:
+    RhythmNote(int lane, NoteType type, double time, double currentTimeMs) 
+        : GameObject(lane, RHYTHM_NOTE) {
+        noteType = type;
+        targetTimeMs = time;
+        isJudged = false;
+        
+        double timeToHit = targetTimeMs - currentTimeMs;
+        z = JUDGMENT_LINE_Z + NOTE_SPEED * timeToHit;
+        
+        z = std::min(z, (double)Z_MAX);
+        z = std::max(z, (double)JUDGMENT_LINE_Z + 1); 
+    }
+
+    double getTargetTime() const { return targetTimeMs; }
+    bool getIsJudged() const { return isJudged; }
+    void markJudged() { isJudged = true; }
+
+    void render(SDL_Renderer* renderer) const {
+        if (isJudged || z <= 0) return;
+        int x, y, w, h;
+        getScreenRect(x, y, w, h);
+
+        SDL_SetRenderDrawColor(renderer, 0, 255, 0, 255); // 統一使用綠色
+        
+        SDL_Rect rect = {x, y, w, h};
+        SDL_RenderFillRect(renderer, &rect);
+    }
+};
+
+class TrackObject : public GameObject {
+public:
+    TrackObject(int lane, ObjectType type) : GameObject(lane, type, Z_MAX) {}
+
+    void render(SDL_Renderer* renderer) const {
+        if (z <= 0) return;
+        int x, y, w, h;
+        getScreenRect(x, y, w, h);
+
+        if (objectType == TRACK_COLLECT) {
+            SDL_SetRenderDrawColor(renderer, 0, 255, 0, 255); // 綠色
+        } else {
+            SDL_SetRenderDrawColor(renderer, 255, 0, 0, 255); // 紅色
+        }
+
+        SDL_Rect rect = {x, y, w, h};
+        SDL_RenderFillRect(renderer, &rect);
+    }
+};
+
+class PlayerCharacter {
+private:
+    int currentLane = 2; 
+    double positionX; 
+    
+    enum { IDLE, JUMP, SLIDE } actionState = IDLE;
+    double actionTimer = 0.0; 
+    
+    const int LANE_START_X = 100; 
+    const int LANE_END_X = SCREEN_WIDTH - 100; 
+
+public:
+    PlayerCharacter() {
+        positionX = (LANE_START_X + LANE_END_X) / 2.0; 
+    }
+    
+    void setAction(int mouseButton) {
+        if (actionState != IDLE) return; 
+        
+        if (mouseButton == SDL_BUTTON_LEFT) {
+            actionState = JUMP;
+            actionTimer = ACTION_DURATION;
+        } else if (mouseButton == SDL_BUTTON_RIGHT) {
+            actionState = SLIDE;
+            actionTimer = ACTION_DURATION;
+        }
+    }
+    
+    void followMouseX(int mouseX) {
+        positionX = (double)mouseX;
+        positionX = std::max((double)LANE_START_X, positionX);
+        positionX = std::min((double)LANE_END_X, positionX);
+
+        double total_width = LANE_END_X - LANE_START_X;
+        double relative_x = positionX - LANE_START_X;
+        
+        double lane_float = (relative_x / total_width) * LANE_COUNT; 
+        
+        int newLane = (int)std::floor(lane_float);
+        
+        newLane = std::max(0, std::min(LANE_COUNT - 1, newLane));
+
+        if (newLane != currentLane) {
+             currentLane = newLane;
+        }
+    }
+
+    void update(double deltaTime) {
+        if (actionState != IDLE) {
+            actionTimer -= deltaTime;
+            if (actionTimer <= 0) {
+                actionState = IDLE;
+            }
+        }
+    }
+    
+    int getCurrentLane() const { return currentLane; }
+    bool isAvoiding() const { return actionState == JUMP || actionState == SLIDE; } 
+    
+    void render(SDL_Renderer* renderer) {
+        int rect_x = (int)positionX - 20; 
+        int rect_y = SCREEN_HEIGHT - 130; // 將角色往上移一點
+        int rect_h = 40;
+
+        if (actionState == JUMP) {
+            SDL_SetRenderDrawColor(renderer, 0, 255, 255, 255); 
+            rect_y -= 40; 
+        } else if (actionState == SLIDE) {
+            SDL_SetRenderDrawColor(renderer, 255, 165, 0, 255); 
+            rect_h = 20; 
+        } else {
+            SDL_SetRenderDrawColor(renderer, 0, 255, 0, 255); 
+        }
+        
+        SDL_Rect rect = {rect_x, rect_y, 40, rect_h};
+        SDL_RenderFillRect(renderer, &rect);
+    }
+};
+
+class GameManager {
+private:
+    SDL_Window* window;
+    SDL_Renderer* renderer;
+    PlayerCharacter character;
+    GameState state = PLAYING; 
+
+    std::vector<RhythmNote*> rhythmNotes;
+    std::vector<TrackObject*> trackObjects;
+    
+    std::chrono::time_point<std::chrono::high_resolution_clock> startTime;
+    double gameTimeMs = 0; 
+    
+    int comboCount = 0;
+    double score = 0;
+    Judgment lastJudgment = MISS; 
+    
+    double lastRhythmSpawnTime = 0; 
+    double lastTrackSpawnTime = 0; 
+    const double RHYTHM_SPAWN_INTERVAL = 300; 
+    const double TRACK_SPAWN_INTERVAL = 1000; 
+    
+    bool keyStates[LANE_COUNT] = {false, false, false, false}; 
+
+public:
+    GameManager() : window(nullptr), renderer(nullptr) {
+        std::srand(std::time(0)); 
+    }
+
+    bool init() {
+        if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO) < 0) { cerr << "SDL 初始化失敗!" << endl; return false; }
+        if (TTF_Init() == -1) { cerr << "SDL_ttf 初始化失敗!" << endl; return false; }
+        if (Mix_OpenAudio(44100, MIX_DEFAULT_FORMAT, 2, 2048) < 0) { cerr << "SDL_mixer 初始化失敗!" << endl; return false; }
+
+        window = SDL_CreateWindow("Rhythm Runner", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, SCREEN_WIDTH, SCREEN_HEIGHT, SDL_WINDOW_SHOWN);
+        if (!window) { cerr << "視窗創建失敗!" << endl; return false; }
+        renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED);
+        if (!renderer) { cerr << "Renderer 創建失敗!" << endl; return false; }
+        
+        startTime = std::chrono::high_resolution_clock::now();
+        
+        return true;
+    }
+    
+    void spawnObjects() {
+        if (gameTimeMs - lastRhythmSpawnTime >= RHYTHM_SPAWN_INTERVAL) {
+            lastRhythmSpawnTime = gameTimeMs;
+            
+            int lane = std::rand() % LANE_COUNT;
+            double targetTime = gameTimeMs + 1000.0; 
+            
+            rhythmNotes.push_back(new RhythmNote(lane, TAP, targetTime, gameTimeMs));
+        }
+
+        if (gameTimeMs - lastTrackSpawnTime >= TRACK_SPAWN_INTERVAL) { 
+             lastTrackSpawnTime = gameTimeMs;
+             int lane = std::rand() % LANE_COUNT;
+             int type_roll = std::rand() % 2; 
+             
+             if (type_roll == 0) {
+                 trackObjects.push_back(new TrackObject(lane, TRACK_OBSTACLE));
+             } else {
+                 trackObjects.push_back(new TrackObject(lane, TRACK_COLLECT));
+             }
+        }
+    }
+    
+    int getLaneIndexFromKey(SDL_Keycode key) {
+        switch (key) {
+            case SDLK_d: return 0;
+            case SDLK_f: return 1;
+            case SDLK_j: return 2;
+            case SDLK_k: return 3;
+            default: return -1;
+        }
+    }
+
+    void handleInput() {
+        SDL_Event e;
+        while (SDL_PollEvent(&e) != 0) {
+            if (e.type == SDL_QUIT) state = RESULT;
+            
+            if (e.type == SDL_KEYDOWN || e.type == SDL_KEYUP) {
+                if (e.key.keysym.sym == SDLK_ESCAPE) {
+                    state = RESULT; 
+                    break;
+                }
+
+                int lane = getLaneIndexFromKey(e.key.keysym.sym);
+                
+                if (lane != -1) {
+                    if (e.type == SDL_KEYDOWN && !e.key.repeat) {
+                        keyStates[lane] = true;
+                        if (state == PLAYING) {
+                            processRhythmJudgment(lane, gameTimeMs);
+                        }
+                    } else if (e.type == SDL_KEYUP) {
+                        keyStates[lane] = false;
+                    }
+                }
+            } else if (e.type == SDL_MOUSEBUTTONDOWN) {
+                if (state != PLAYING) continue;
+                character.setAction(e.button.button);
+            } else if (e.type == SDL_MOUSEMOTION) {
+                if (state != PLAYING) continue;
+                character.followMouseX(e.motion.x);
+            }
+        }
+    }
+
+    void processRhythmJudgment(int lane, double pressTime) {
+        Judgment currentJudgment = MISS;
+        RhythmNote* bestNote = nullptr;
+        double minDelta = 9999;
+
+        for (RhythmNote* note : rhythmNotes) {
+            if (note->getLaneIndex() == lane && !note->getIsJudged()) {
+                double targetTime = note->getTargetTime(); 
+                double delta = std::abs(pressTime - targetTime);
+
+                if (delta < minDelta) {
+                    minDelta = delta;
+                    bestNote = note;
+                }
+            }
+        }
+        
+        if (bestNote) {
+            if (minDelta <= PERFECT_MS) currentJudgment = PERFECT;
+            else if (minDelta <= GREAT_MS) currentJudgment = GREAT;
+            else if (minDelta <= GOOD_MS) currentJudgment = GOOD;
+            
+            if (currentJudgment != MISS) {
+                bestNote->markJudged();
+                lastJudgment = currentJudgment;
+                comboCount++;
+
+                double baseScore = 1000.0;
+                if (currentJudgment == GREAT) baseScore *= 0.75;
+                if (currentJudgment == GOOD) baseScore *= 0.50;
+
+                double multiplier = 1.0 + std::floor(comboCount / 50.0); 
+                score += baseScore * multiplier;
+            } else {
+                comboCount = 0;
+                lastJudgment = MISS;
+            }
+        } else {
+            comboCount = 0;
+            lastJudgment = MISS;
+        }
+    }
+    
+    void processTrackCollision() {
+        for (TrackObject* obj : trackObjects) {
+            if (obj->getZ() <= JUDGMENT_LINE_Z && obj->getZ() > 0) { 
+                if (obj->getLaneIndex() == character.getCurrentLane()) {
+                    if (obj->getType() == TRACK_OBSTACLE) {
+                        if (!character.isAvoiding()) {
+                            comboCount = 0; 
+                            lastJudgment = MISS;
+                            score -= 500; 
+                        }
+                    } else if (obj->getType() == TRACK_COLLECT) {
+                        score += 500; 
+                        obj->update(-1000000); 
+                    }
+                }
+            }
+        }
+    }
+    
+    const char* getJudgmentString(Judgment j) const {
+        switch (j) {
+            case PERFECT: return "PERFECT (彩色字體)";
+            case GREAT:   return "GREAT (黃色字體)";
+            case GOOD:    return "GOOD (白色字體)";
+            case MISS:    return "MISS (黑色字體)";
+            default:      return "UNKNOWN";
+        }
+    }
+
+    void update(double deltaTime) {
+        if (state != PLAYING) return;
+        
+        gameTimeMs = std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::high_resolution_clock::now() - startTime
+        ).count();
+        
+        spawnObjects();
+
+        character.update(deltaTime);
+
+        rhythmNotes.erase(std::remove_if(rhythmNotes.begin(), rhythmNotes.end(), 
+            [this, deltaTime](RhythmNote* n) {
+                n->update(deltaTime);
+                if (!n->getIsJudged() && n->getZ() <= 0) {
+                    comboCount = 0; 
+                    lastJudgment = MISS;
+                }
+                return n->getIsJudged() || n->getZ() <= -100; 
+            }), rhythmNotes.end());
+
+        for (TrackObject* obj : trackObjects) obj->update(deltaTime);
+        processTrackCollision(); 
+        
+        trackObjects.erase(std::remove_if(trackObjects.begin(), trackObjects.end(), 
+            [](TrackObject* o) { return o->getZ() <= -100; }), trackObjects.end());
+    }
+
+    void render() {
+        SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255); 
+        SDL_RenderClear(renderer);
+        
+        SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255); 
+        
+        const int LANE_START_X = 100; 
+        const int LANE_END_X = SCREEN_WIDTH - 100; 
+        const int TOTAL_WIDTH_NEAR = LANE_END_X - LANE_START_X;
+        const int LANE_SPACING_NEAR = TOTAL_WIDTH_NEAR / LANE_COUNT;
+        
+        const int VANISHING_POINT_X = SCREEN_WIDTH / 2; 
+        const int VANISHING_POINT_Y = START_Y_FAR; // 讓線條收斂於物件生成線
+
+        // 繪製物件生成水平線 (綠筆圖示中的綠線)
+        SDL_SetRenderDrawColor(renderer, 0, 255, 0, 255);
+        SDL_RenderDrawLine(renderer, 0, START_Y_FAR, SCREEN_WIDTH, START_Y_FAR);
+        
+        // 繪製軌道分隔線 (白色)
+        SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255); 
+        for (int i = 0; i <= LANE_COUNT; ++i) {
+            int end_x = LANE_START_X + i * LANE_SPACING_NEAR;
+            const int JUDGMENT_Y = SCREEN_HEIGHT - 80;
+            int end_y = JUDGMENT_Y;
+
+            SDL_RenderDrawLine(renderer, VANISHING_POINT_X, VANISHING_POINT_Y, end_x, end_y);
+        }
+
+        // 繪製按鍵區域
+        const int KEY_AREA_HEIGHT = 80;
+        const int JUDGMENT_Y = SCREEN_HEIGHT - KEY_AREA_HEIGHT; // 判定線位置
+        
+        // 繪製判定線
+        SDL_RenderDrawLine(renderer, 0, JUDGMENT_Y, SCREEN_WIDTH, JUDGMENT_Y);
+        
+        const int KEY_GAP = 15; 
+        
+        // 繪製四個按鍵
+        for (int i = 0; i < LANE_COUNT; ++i) {
+            int key_x_start = LANE_START_X + i * LANE_SPACING_NEAR + KEY_GAP;
+            int key_x_end = LANE_START_X + (i + 1) * LANE_SPACING_NEAR - KEY_GAP;
+            int key_width = key_x_end - key_x_start;
+            
+            if (keyStates[i]) {
+                SDL_SetRenderDrawColor(renderer, 150, 150, 150, 255); 
+            } else {
+                SDL_SetRenderDrawColor(renderer, 50, 50, 50, 255); 
+            }
+
+            SDL_Rect key_rect = {key_x_start, JUDGMENT_Y, key_width, KEY_AREA_HEIGHT};
+            SDL_RenderFillRect(renderer, &key_rect);
+            
+            SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
+            SDL_RenderDrawRect(renderer, &key_rect);
+        }
+        
+        for (RhythmNote* note : rhythmNotes) note->render(renderer);
+        for (TrackObject* obj : trackObjects) obj->render(renderer);
+        
+        character.render(renderer);
+        
+        SDL_RenderPresent(renderer);
+    }
+
+    void run() {
+        Uint64 NOW = SDL_GetPerformanceCounter();
+        Uint64 LAST = 0;
+        double deltaTime = 0;
+
+        while (state != RESULT) {
+            LAST = NOW;
+            NOW = SDL_GetPerformanceCounter();
+            deltaTime = (double)((NOW - LAST) * 1000 / SDL_GetPerformanceFrequency());
+
+            handleInput();
+            update(deltaTime);
+            render();
+        }
+
+        cout << "\n=== 遊戲結束 ===" << endl;
+        cout << "最終得分: " << static_cast<long long>(score) << endl;
+        cout << "最多連擊數: " << comboCount << endl;
+    }
+
+    void close() {
+        for (auto* n : rhythmNotes) delete n;
+        for (auto* o : trackObjects) delete o;
+        
+        SDL_DestroyRenderer(renderer);
+        SDL_DestroyWindow(window);
+        Mix_CloseAudio();
+        TTF_Quit();
+        SDL_Quit();
+    }
+};
+
+int main(int argc, char* args[]) {
+    GameManager game;
+    if (!game.init()) {
+        cerr << "遊戲初始化失敗，請檢查 SDL 庫是否連結正確。" << endl;
+        return 1;
+    }
+
+    game.run();
+    game.close();
+
+    return 0;
+}
