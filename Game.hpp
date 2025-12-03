@@ -22,9 +22,9 @@ public:
     std::vector<NoteData> notes;       // sorted by startFragment
     uint8_t lanes;               // default = 4
     uint8_t fragments;           // visible fragments
-    unsigned int timePerFragment;      // ms per fragment
+    uint64_t timePerFragment;      // ms per fragment
     std::size_t loadNext = 0;          // next note index to load
-    unsigned int duration;
+    uint64_t duration;
 
     // Per lane:
     //   get<0> = bool lanePressed
@@ -38,20 +38,20 @@ public:
     std::vector<uint64_t> holdPressedTime;
 
     // Scoring
-    unsigned int score = 0;
-    unsigned int perfectCount = 0, greatCount = 0, goodCount = 0, badCount = 0;
-    unsigned int missCount = 0;
-    unsigned int combo = 0, maxCombo = 0;
+    uint64_t score = 0;
+    uint64_t perfectCount = 0, greatCount = 0, goodCount = 0, badCount = 0;
+    uint64_t missCount = 0;
+    uint64_t combo = 0, maxCombo = 0;
 
 public:
     // =========================
     //  CONSTRUCTION
     // =========================
-    Game(uint8_t lanes_, uint8_t fragments_, unsigned int tpf)
+    Game(uint8_t lanes_, uint8_t fragments_, uint64_t tpf)
         : lanes(lanes_), fragments(fragments_), timePerFragment(tpf)
     {
         highway.reserve(lanes);
-        for(unsigned i = 0; i < lanes; ++i) {
+        for(uint8_t i = 0; i < lanes; ++i) {
             highway.emplace_back(
                 false,
                 extend::circulate<int8_t, std::vector<int8_t>>(
@@ -68,12 +68,12 @@ public:
     // =========================
 
     static inline bool isTap(int8_t f) { return f & 0x80; }
-    static inline int holdRem(int8_t f) { return (f >> 1) & 0x3F; }
+    static inline int64_t holdRem(int8_t f) { return (f >> 1) & 0x3F; }
     static inline int8_t makeTap() { return 0x80; }
     static inline int8_t makeHold(int rem) {
         if(rem < 1) rem = 1;
         if(rem > 63) rem = 63;
-        return static_cast<char>(rem << 1);
+        return static_cast<int8_t>(rem << 1);
     }
     static inline int8_t empty() { return 0; }
 
@@ -90,7 +90,7 @@ public:
         combo = 0;
     }
 
-    void addTapScore(unsigned diffMs) {
+    void addTapScore(uint64_t diffMs) {
         // normalize to fraction of fragment time
         double f = double(diffMs) / double(timePerFragment);
 
@@ -101,6 +101,11 @@ public:
         else { missCount++; resetCombo(); }
     }
 
+    void addHoldScore(uint64_t heldMs) {
+          double f = double(heldMs) * 400.0f / double(timePerFragment);
+          score += static_cast<uint64_t>(f);
+    }
+
     // =========================
     //   loadFragment()
     //   Called once every timePerFragment ms
@@ -108,7 +113,7 @@ public:
 
     void loadFragment(uint64_t nowMs) {
         // 1. Process bottom fragments (misses + hold sustain end)
-        for (unsigned lane = 0; lane < lanes; ++lane) {
+        for (uint8_t lane = 0; lane < lanes; ++lane) {
             auto & [pressed, circ] = highway[lane];
             int8_t bottom = circ[circ.ssize() - 1];
 
@@ -118,13 +123,13 @@ public:
                 resetCombo();
             }
             else {
-                int hr = holdRem(bottom);
+                int64_t hr = holdRem(bottom);
                 if (hr > 0) {
                     // hold fragment
                     if (pressed) {
                         // add sustain score for entire fragment duration
                         uint64_t held = nowMs - holdPressedTime[lane];
-                        score += held;  // you may apply a factor here
+                        addHoldScore(held);
                         holdPressedTime[lane] = nowMs;
                     } else {
                         // player did NOT hold → miss sustain
@@ -136,13 +141,13 @@ public:
         }
 
         // 2. rotate all lanes
-        for (unsigned lane = 0; lane < lanes; ++lane) {
+        for (uint8_t lane = 0; lane < lanes; ++lane) {
             auto & [pressed, circ] = highway[lane];
             circ.rotate(-1);
         }
 
         // 3. Fill new top from previous top (holdRemaining - 1)
-        for (unsigned lane = 0; lane < lanes; ++lane) {
+        for (uint8_t lane = 0; lane < lanes; ++lane) {
             auto & [pressed, circ] = highway[lane];
             int8_t prevTop = circ[1]; // previous fragment before rotation
             int8_t newTop = empty();
@@ -189,13 +194,12 @@ public:
             return;
         }
 
-        int hr = holdRem(bottom);
+        int64_t hr = holdRem(bottom);
         if (hr > 0) {
             // hold fragment
             if (hr == holdRem(circ[circ.ssize() - 2])) {
                 // This is the FIRST fragment of the hold
                 holdPressedTime[lane] = nowMs;
-                addCombo();
             }
         }
     }
@@ -210,13 +214,12 @@ public:
         pressed = false;
 
         int8_t bottom = circ[circ.ssize() - 1];
-        int hr = holdRem(bottom);
+        int64_t hr = holdRem(bottom);
 
         if (hr == 1) {
             // final fragment: tail hit
             uint64_t held = nowMs - holdPressedTime[lane];
-            score += held;  // tail bonus (apply factor if needed)
-            addCombo();
+            addHoldScore(held);
             circ[circ.ssize() - 1] = empty();
         }
 
@@ -228,9 +231,9 @@ public:
     // TODO
     // =========================
 
-    static /*SDL_Color*/ int getColor(int8_t f, bool pressed) {
+    static /*SDL_Color*/ int64_t getColor(int8_t f, bool pressed) {
         if (isTap(f)) return 1;           // red
-        int hr = holdRem(f);
+        int64_t hr = holdRem(f);
         if (hr == 0) return 0;            // empty
         if (!pressed) return 2;           // light green
         return 3;                         // deep green
