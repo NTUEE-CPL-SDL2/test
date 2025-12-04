@@ -25,13 +25,13 @@ public:
 
     // 1: pressed, 0: not
     std::vector<bool> lanePressed;
-    
+
     // Hold sustain timing
     std::vector<uint64_t> holdPressedTime;
 
     // Scoring, hold not counted for perfect to miss and combo
     uint64_t score = 0, perfectCount = 0, greatCount = 0, goodCount = 0, badCount = 0, missCount = 0, combo = 0, maxCombo = 0, heldTime = 0;
-    
+
     std::size_t nowFragment = 0;
 
 public:
@@ -81,7 +81,7 @@ public:
                 resetCombo();
                 bottom = 0;
             } else if (bottom > 0) { // hold
-                if (lanePressed[lane]) { 
+                if (lanePressed[lane]) {
                     uint64_t nowMs = (nowFragment + 1) * msPerFragment;
                     uint64_t held = nowMs - holdPressedTime[lane];
                     addHoldScore(held);
