@@ -6,14 +6,14 @@
 #include "Game.hpp"
 
 std::vector<NoteData> generateRandomNotes(
-    uint8_t lanes,
-    uint8_t fragments,
+    std::size_t lanes,
+    std::size_t fragments,
     unsigned int numNotes
 ) {
     std::vector<NoteData> notes;
     std::srand((unsigned)std::time(nullptr));
 
-    for (unsigned i = 0; i < numNotes; ++i) {
+    for (unsigned int i = 0; i < numNotes; ++i) {
         NoteData n;
         n.lane = std::rand() % lanes;
 
@@ -24,7 +24,7 @@ std::vector<NoteData> generateRandomNotes(
         if (std::rand() % 10 < 7) {
             n.holds = -1; // tap
         } else {
-            n.holds = static_cast<int8_t>(1 + std::rand() % 4); // hold 1~4
+            n.holds = static_cast<int8_t>(1 + std::rand() % 5); // hold 1-5
         }
         notes.push_back(n);
     }
