@@ -155,9 +155,9 @@ public:
     drawText(rnd, "Score: " + std::to_string(game.score), screenW / 2, 30,
              medium_font, {255, 255, 255, 255}, ALIGN_CENTER);
 
-    int statsX = 20;
-    int statsY = 30;
-    int lineHeight = 30;
+    const int statsX = 20;
+    const int statsY = 30;
+    const int lineHeight = 40;
 
     drawText(rnd, "PERFECT: " + std::to_string(game.perfectCount), statsX,
              statsY, small_font, {0, 255, 0, 255});
@@ -170,7 +170,7 @@ public:
     drawText(rnd, "MISS: " + std::to_string(game.missCount), statsX,
              statsY + lineHeight * 4, small_font, {255, 0, 0, 255});
     drawText(rnd, "COMBO: " + std::to_string(game.combo), statsX,
-             statsY + lineHeight * 5, small_font, {255, 0, 0, 255});
+             statsY + lineHeight * 5, small_font, {255, 255, 255, 255});
     drawText(rnd, "MAX COMBO: " + std::to_string(game.maxCombo), statsX,
              statsY + lineHeight * 6, small_font, {255, 255, 255, 255});
     drawText(rnd, "HELD TIME: " + std::to_string(game.heldTime) + " ms", statsX,
@@ -178,7 +178,7 @@ public:
 
     drawText(rnd, "Fragment: " + std::to_string(game.nowFragment), screenW - 20,
              30, small_font, {200, 200, 200, 255}, ALIGN_RIGHT);
-    drawText(rnd, "FPS: " + std::to_string(fps), screenW - 20, 60, small_font,
+    drawText(rnd, "FPS: " + std::to_string(fps), screenW - 20, 70, small_font,
              {200, 200, 200, 255}, ALIGN_RIGHT);
   }
 
