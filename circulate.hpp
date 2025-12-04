@@ -247,7 +247,7 @@ public:
   }
 
   circulate &
-  operator=(circulate &&other) noexcept(this == &other ||
+  operator=(circulate &&other) noexcept((this == &other) ||
                                         noexcept(std::move(other.c))) {
     if (this != &other) {
       c = std::move(other.c);
