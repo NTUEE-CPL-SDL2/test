@@ -1,7 +1,6 @@
 #include <iostream>
 #include <cassert>
 #include "Game.hpp"
-#include "generate-notes.hpp"
 
 void testTapScoring() {
     std::cout << "=== Testing Tap Scoring ===" << std::endl;
