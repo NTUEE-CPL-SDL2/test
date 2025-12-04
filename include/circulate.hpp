@@ -1,14 +1,16 @@
 #pragma once // circulate.hpp
 
-#include <algorithm>
 #include <compare>
 #include <cstddef>
 #include <iterator>
 #include <stdexcept>
 #include <utility>
-#include <vector>
 
-namespace extend {
+#include "range-access.hpp"
+#include "swap.hpp"
+#include "vector.hpp"
+
+namespace mystd {
 
 template <class circulate> class _circulate_iterator {
 public:
@@ -186,7 +188,7 @@ public:
   }
 };
 
-template <class T, class Container = std::vector<T>> class circulate {
+template <class T, class Container = mystd::vector<T>> class circulate {
 public:
   using value_type = T;
   using container_type = Container;
@@ -255,9 +257,9 @@ public:
     return *this;
   }
 
-  void swap(circulate &other) noexcept(noexcept(std::swap(c, other.c))) {
-    std::swap(c, other.c);
-    std::swap(start, other.start);
+  void swap(circulate &other) noexcept(noexcept(mystd::swap(c, other.c))) {
+    mystd::swap(c, other.c);
+    mystd::swap(start, other.start);
   }
 
   void rotate(difference_type n) noexcept {
@@ -333,13 +335,11 @@ template <class Container>
 circulate(Container, typename Container::size_type = 0)
     -> circulate<typename Container::value_type, Container>;
 
-} // namespace extend
-
-namespace std {
 template <class T, class Container>
 void swap(
-    extend::circulate<T, Container> &lhs,
-    extend::circulate<T, Container> &rhs) noexcept(noexcept(lhs.swap(rhs))) {
+    mystd::circulate<T, Container> &lhs,
+    mystd::circulate<T, Container> &rhs) noexcept(noexcept(lhs.swap(rhs))) {
   lhs.swap(rhs);
 }
-} // namespace std
+
+} // namespace mystd

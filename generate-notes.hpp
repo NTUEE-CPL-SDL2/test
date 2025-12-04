@@ -3,14 +3,15 @@
 #include <cstdlib>
 #include <ctime>
 #include <iostream>
+
 #include "Game.hpp"
 
-std::vector<NoteData> generateRandomNotes(
+mystd::vector<NoteData> generateRandomNotes(
     std::size_t lanes,
     std::size_t fragments,
     unsigned int numNotes
 ) {
-    std::vector<NoteData> notes;
+    mystd::vector<NoteData> notes;
     std::srand((unsigned)std::time(nullptr));
 
     for (unsigned int i = 0; i < numNotes; ++i) {

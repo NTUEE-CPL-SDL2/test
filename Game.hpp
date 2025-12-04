@@ -4,8 +4,9 @@
 #include <cstddef>
 #include <cstdint>
 #include <algorithm>
-#include <vector>
-#include "circulate.hpp"
+
+#include "include/vector.hpp"
+#include "include/circulate.hpp"
 
 struct NoteData {
     std::size_t startFragment;
@@ -15,19 +16,19 @@ struct NoteData {
 
 class Game {
 public:
-    std::vector<NoteData> notes; // sorted by startFragment
+    mystd::vector<NoteData> notes; // sorted by startFragment
     std::size_t lanes;
     std::size_t fragments; // visible fragments
     uint64_t msPerFragment; // ms per fragment
     std::size_t loadNext = 0; // next note index to load
 
-    std::vector<extend::circulate<int8_t, std::vector<int8_t>>> highway;
+    mystd::vector<mystd::circulate<int8_t, mystd::vector<int8_t>>> highway;
 
     // 1: pressed, 0: not
-    std::vector<bool> lanePressed;
+    mystd::vector<bool> lanePressed;
 
     // Hold sustain timing
-    std::vector<uint64_t> holdPressedTime;
+    mystd::vector<uint64_t> holdPressedTime;
 
     // Scoring, hold not counted for perfect to miss and combo
     uint64_t score = 0, perfectCount = 0, greatCount = 0, goodCount = 0, badCount = 0, missCount = 0, combo = 0, maxCombo = 0, heldTime = 0;
@@ -40,7 +41,7 @@ public:
     {
         highway.reserve(lanes);
         for(uint8_t i = 0; i < lanes; ++i) {
-            highway.emplace_back(extend::circulate<int8_t, std::vector<int8_t>>(std::vector<int8_t>(fragments, 0)));
+            highway.emplace_back(mystd::circulate<int8_t, mystd::vector<int8_t>>(mystd::vector<int8_t>(fragments, 0)));
         }
         lanePressed.assign(lanes, false);
         holdPressedTime.assign(lanes, 0);

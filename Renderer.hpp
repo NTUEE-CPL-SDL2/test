@@ -7,13 +7,16 @@
 #include <functional>
 #include <cmath>
 #include <string>
+
+#include "include/tuple.hpp"
+
 #include "Game.hpp"
 
 struct TupleHash {
-    size_t operator()(const std::tuple<int8_t, bool, uint64_t>& t) const {
-        auto hash1 = std::hash<int8_t>{}(std::get<0>(t));
-        auto hash2 = std::hash<bool>{}(std::get<1>(t));
-        auto hash3 = std::hash<uint64_t>{}(std::get<2>(t));
+    size_t operator()(const mystd::tuple<int8_t, bool, uint64_t>& t) const {
+        auto hash1 = std::hash<int8_t>{}(mystd::get<0>(t));
+        auto hash2 = std::hash<bool>{}(mystd::get<1>(t));
+        auto hash3 = std::hash<uint64_t>{}(mystd::get<2>(t));
         return hash1 ^ (hash2 << 1) ^ (hash3 << 2);
     }
 };
@@ -21,7 +24,7 @@ struct TupleHash {
 class Renderer {
 private:
     Game& game;
-    std::unordered_map<std::tuple<int8_t, bool, uint64_t>, SDL_Texture*, TupleHash> textureCache;
+    std::unordered_map<mystd::tuple<int8_t, bool, uint64_t>, SDL_Texture*, TupleHash> textureCache;
     std::unordered_map<std::string, SDL_Texture*> textCache;
 
     int screenW;
@@ -85,7 +88,7 @@ public:
                     holdTime = game.holdPressedTime[lane];
                 }
 
-                auto key = std::make_tuple(fragmentValue, lanePressed && fragmentIdx == game.fragments - 1, holdTime);
+                auto key = mystd::make_tuple(fragmentValue, lanePressed && fragmentIdx == game.fragments - 1, holdTime);
 
                 auto it = textureCache.find(key);
                 SDL_Texture* texture;
@@ -155,7 +158,7 @@ public:
         std::string maxComboText = "MAX COMBO: " + std::to_string(game.maxCombo);
         drawText(rnd, maxComboText, statsX, statsY + lineHeight * 6, small_font, {255, 255, 255, 255});
 
-        std::string heldText = "HOLD SCORE: " + std::to_string(game.heldTime / 1000) + "s";
+        std::string heldText = "HELD TIME: " + std::to_string(game.heldTime / 1000) + "s";
         drawText(rnd, heldText, statsX, statsY + lineHeight * 7, small_font, {100, 255, 100, 255});
 
         std::string timeText = "Fragment: " + std::to_string(game.nowFragment);

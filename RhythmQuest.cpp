@@ -2,6 +2,7 @@
 #include <SDL2/SDL_ttf.h>
 #include <iostream>
 #include <chrono>
+
 #include "Game.hpp"
 #include "Renderer.hpp"
 #include "generate-notes.hpp"
@@ -118,8 +119,6 @@ int main(int argc, char* argv[]) {
 
                 if (lane < LANES) {
                     game.keyPressed(lane, SDL_GetTicks() - gameStartTime);
-                    std::cout << "Lane " << lane << " pressed\n";
-                    std::cout << "Score: " << game.score << ", Perfect: " << game.perfectCount << ", Great: " << game.greatCount << ", Good: " << game.goodCount << ", Bad: " << game.badCount << ", Miss: " << game.missCount << ", Combo: " << game.combo << ", MaxCombo: " << game.maxCombo << ", HeldTime: " << game.heldTime << std::endl;
                 }
             } else if (event.type == SDL_KEYUP) {
                 size_t lane = -1;
@@ -138,8 +137,6 @@ int main(int argc, char* argv[]) {
 
                 if (lane < LANES) {
                     game.keyReleased(lane, SDL_GetTicks() - gameStartTime);
-                    std::cout << "Lane " << lane << " released\n";
-                    std::cout << "Score: " << game.score << ", Perfect: " << game.perfectCount << ", Great: " << game.greatCount << ", Good: " << game.goodCount << ", Bad: " << game.badCount << ", Miss: " << game.missCount << ", Combo: " << game.combo << ", MaxCombo: " << game.maxCombo << ", HeldTime: " << game.heldTime << std::endl;
                 }
             }
         }
