@@ -246,9 +246,8 @@ public:
     return *this;
   }
 
-  circulate &
-  operator=(circulate &&other) noexcept((this == &other) ||
-                                        noexcept(std::move(other.c))) {
+  circulate &operator=(circulate &&other) noexcept(
+      std::is_nothrow_move_assignable_v<Container>) {
     if (this != &other) {
       c = std::move(other.c);
       start = std::exchange(other.start, 0);
