@@ -14,7 +14,7 @@
 
 #include "Game.hpp"
 
-struct TupleHash {
+struct NotesCacheHash {
   std::size_t operator()(const mystd::tuple<int8_t, bool, uint64_t> &t) const {
     auto hash1 = std::hash<int8_t>{}(mystd::get<0>(t));
     auto hash2 = std::hash<bool>{}(mystd::get<1>(t));
@@ -27,7 +27,7 @@ class Renderer {
 private:
   Game &game;
   std::unordered_map<mystd::tuple<int8_t, bool, uint64_t>, SDL_Texture *,
-                     TupleHash>
+                     NotesCacheHash>
       notesTextureCache;
   std::unordered_map<std::string, SDL_Texture *> textTextureCache;
   std::unordered_map<std::string, SDL_Texture *> imageTextureCache;

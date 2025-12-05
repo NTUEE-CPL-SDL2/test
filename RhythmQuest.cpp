@@ -5,12 +5,15 @@
 #include <iostream>
 
 #include "Game.hpp"
+#include "Mods.hpp"
 #include "Renderer.hpp"
 #include "generate-notes.hpp"
+#include "GameOfLife.hpp"
 
 const std::size_t LANES = 4;
 const std::size_t FRAGMENTS = 10;
 const uint64_t MS_PER_FRAGMENT = 100;
+std::string MOD = "Game of Life, Survive: 2, Revive: 3, Hold Treated as Alive, Before New Fragments Load";
 
 int main(int argc, char *argv[]) {
   if (SDL_Init(SDL_INIT_VIDEO) < 0) {
@@ -19,7 +22,7 @@ int main(int argc, char *argv[]) {
   }
 
   if (TTF_Init() < 0) {
-    std::cerr << "TTF could not initialize: " << TTF_GetError() << std::endl;
+    std::cerr << "SDL_ttf could not initialize: " << TTF_GetError() << std::endl;
     TTF_Quit();
     SDL_Quit();
     return 1;
@@ -192,7 +195,8 @@ int main(int argc, char *argv[]) {
     game.clearExpiredEffects(currentTime);
 
     if (currentTime - lastFragmentTime >= MS_PER_FRAGMENT) {
-      game.loadFragment();
+      auto& modEntry = mods::getModMap()[MOD];
+game.loadFragment(mystd::get<0>(modEntry), mystd::get<1>(modEntry));
       lastFragmentTime += MS_PER_FRAGMENT;
     }
 

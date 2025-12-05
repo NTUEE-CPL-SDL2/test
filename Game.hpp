@@ -1,7 +1,4 @@
 #pragma once
-#ifdef DEBUG
-#include <iostream>
-#endif
 
 #include <algorithm>
 #include <cmath>
@@ -155,8 +152,8 @@ public:
     }
   }
 
-  // Called once every msPerFragment ms
-  void loadFragment(void (*foo)(Game &) = nullptr) {
+  // Called every msPerFragment ms
+  void loadFragment(void (*foo)(Game &) = nullptr, bool before = true) {
     // 1. Process bottom fragments (misses + hold sustain end)
     for (std::size_t lane = 0; lane < lanes; ++lane) {
       int8_t &bottom = highway[lane].back();
@@ -176,6 +173,9 @@ public:
         bottom = 0;
       }
     }
+    
+    if (before && foo)
+      foo(*this);
 
     // 2. Rotate all lanes
     for (std::size_t lane = 0; lane < lanes; ++lane) {
@@ -197,8 +197,7 @@ public:
     }
     nowFragment++;
 
-    // 5. Foo
-    if (foo)
+    if (!before && foo)
       foo(*this);
   }
 
