@@ -14,12 +14,6 @@
 
 #include "Game.hpp"
 
-/*
-Effects:
-resources/img:
-
-*/
-
 struct TupleHash {
   std::size_t operator()(const mystd::tuple<int8_t, bool, uint64_t> &t) const {
     auto hash1 = std::hash<int8_t>{}(mystd::get<0>(t));
