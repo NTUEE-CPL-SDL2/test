@@ -363,8 +363,8 @@ private:
 
     SDL_RenderCopy(rnd, imageTexture, nullptr, &destRect);
 
-    drawText(rnd, effectText, laneCenterX, effectY + effectHeight / 2, small_font, textColor,
-             ALIGN_CENTER);
+    drawText(rnd, effectText, laneCenterX, effectY + effectHeight / 2,
+             small_font, textColor, ALIGN_CENTER);
   }
 
   void drawCenterEffect(SDL_Renderer *rnd, uint32_t effect) {
@@ -405,8 +405,8 @@ private:
 
         drawText(rnd, comboText, screenW / 2, screenH / 3, large_font,
                  comboColor, ALIGN_CENTER);
-        drawText(rnd, "COMBO: " + std::to_string(game.combo), screenW / 2, screenH / 3 + 80, medium_font,
-                 comboColor, ALIGN_CENTER);
+        drawText(rnd, "COMBO: " + std::to_string(game.combo), screenW / 2,
+                 screenH / 3 + 80, medium_font, comboColor, ALIGN_CENTER);
       }
     }
 

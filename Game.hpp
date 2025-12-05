@@ -8,15 +8,14 @@
 #include <cstddef>
 #include <cstdint>
 
-#include "include/vector.hpp"
 #include "include/circulate.hpp"
 #include "include/priority_queue.hpp"
+#include "include/vector.hpp"
 
 // int8_t: -1 = tap, -2 = invisible tap, >=1 = number of remaining fragments to
 // hold, 0 = empty
 
-template<class T>
-class game_priority_queue : public mystd::priority_queue<T> {
+template <class T> class game_priority_queue : public mystd::priority_queue<T> {
 public:
   using mystd::priority_queue<T>::c;
 };
@@ -36,17 +35,15 @@ const uint32_t MISS = 1u << 4;
 const uint32_t HOLD_RELEASED = 1u << 5;
 const uint32_t CLEAR = ~(PERFECT | GREAT | GOOD | BAD | MISS | HOLD_RELEASED);
 
-const uint32_t  COMBO = 1u;
-const uint32_t  SCORE = 2u;
+const uint32_t COMBO = 1u;
+const uint32_t SCORE = 2u;
 
 struct Effect {
-    uint32_t content;
-    uint64_t endTime;
+  uint32_t content;
+  uint64_t endTime;
 };
 
-bool operator<(Effect lhs, Effect rhs) {
-  return lhs.endTime > rhs.endTime;
-}
+bool operator<(Effect lhs, Effect rhs) { return lhs.endTime > rhs.endTime; }
 
 class Game {
 public:
@@ -89,23 +86,25 @@ public:
   inline void addCombo(uint64_t nowMs) {
     combo++;
     maxCombo = std::max(maxCombo, combo);
-    if (combo > 1) centerEffects.push({COMBO, nowMs + msPerFragment * fragments});
+    if (combo > 1)
+      centerEffects.push({COMBO, nowMs + msPerFragment * fragments});
   }
 
   inline void resetCombo() { combo = 0; }
 
   inline void clearExpiredEffects(uint64_t nowMs) {
-    for (auto& i : laneEffects)
-      if (i.endTime <= nowMs) i = {NO_LANE_EFFECT, 0};
+    for (auto &i : laneEffects)
+      if (i.endTime <= nowMs)
+        i = {NO_LANE_EFFECT, 0};
 
-    while (!centerEffects.empty() &&
-           centerEffects.top().endTime <= nowMs) {
-        centerEffects.pop();
+    while (!centerEffects.empty() && centerEffects.top().endTime <= nowMs) {
+      centerEffects.pop();
     }
   }
 
   void addTapScore(uint64_t nowMs, std::size_t lane) {
-    double f = (double)(nowMs - nowFragment * msPerFragment) / double(msPerFragment);
+    double f =
+        (double)(nowMs - nowFragment * msPerFragment) / double(msPerFragment);
 
     uint32_t prev = score / 1000;
 
@@ -134,7 +133,7 @@ public:
       laneEffects[lane].content |= BAD;
       resetCombo();
     }
-    
+
     laneEffects[lane].endTime = nowMs + msPerFragment * fragments;
 
     if ((score / 1000 - prev) > 0)
@@ -151,7 +150,9 @@ public:
     uint32_t prev = score / 1000;
     score += static_cast<uint32_t>(f);
     if ((score / 1000 - prev) > 0) {
-      centerEffects.push({SCORE, nowMs + msPerFragment * fragments}); std::cout << "a";}
+      centerEffects.push({SCORE, nowMs + msPerFragment * fragments});
+      std::cout << "a";
+    }
   }
 
   // Called once every msPerFragment ms
