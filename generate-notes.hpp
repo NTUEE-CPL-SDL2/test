@@ -7,7 +7,8 @@
 
 mystd::vector<NoteData> generateRandomNotes(std::size_t lanes,
                                             std::size_t fragments,
-                                            unsigned int numNotes) {
+                                            unsigned int numNotes,
+                                            int tapPercent = 70) {
   mystd::vector<NoteData> notes;
   std::srand((unsigned)std::time(nullptr));
 
@@ -18,8 +19,7 @@ mystd::vector<NoteData> generateRandomNotes(std::size_t lanes,
     // startFragment between 0 and fragments*5
     n.startFragment = std::rand() % (fragments * 5);
 
-    // 70% tap, 30% hold
-    if (std::rand() % 10 < 7) {
+    if (std::rand() % 100 < tapPercent) {
       n.holds = -1; // tap
     } else {
       n.holds = static_cast<int8_t>(1 + std::rand() % 5); // hold 1-5

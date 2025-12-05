@@ -1,19 +1,21 @@
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_image.h>
 #include <SDL2/SDL_ttf.h>
+#include <any>
 #include <cstddef>
 #include <iostream>
+
+#include "include/tuple.hpp"
 
 #include "Game.hpp"
 #include "Mods.hpp"
 #include "Renderer.hpp"
 #include "generate-notes.hpp"
-#include "GameOfLife.hpp"
+#include "mods/GameOfLife.hpp"
 
 const std::size_t LANES = 4;
 const std::size_t FRAGMENTS = 10;
 const uint64_t MS_PER_FRAGMENT = 100;
-std::string MOD = "Game of Life, Survive: 2, Revive: 3, Hold Treated as Alive, Before New Fragments Load";
 
 int main(int argc, char *argv[]) {
   if (SDL_Init(SDL_INIT_VIDEO) < 0) {
@@ -22,7 +24,8 @@ int main(int argc, char *argv[]) {
   }
 
   if (TTF_Init() < 0) {
-    std::cerr << "SDL_ttf could not initialize: " << TTF_GetError() << std::endl;
+    std::cerr << "SDL_ttf could not initialize: " << TTF_GetError()
+              << std::endl;
     TTF_Quit();
     SDL_Quit();
     return 1;
@@ -80,9 +83,17 @@ int main(int argc, char *argv[]) {
     return 1;
   }
 
+  auto MOD = mystd::make_tuple("Game of Life (hold notes counted as alive "
+                               "cell, before new fragments load)",
+                               mystd::make_tuple(0b01010101, 0b10101010));
+  const auto &modEntry = mods::getModMap()[mystd::get<0>(MOD)];
+  const std::function<void(Game &)> foo = [MOD, modEntry](Game &game) {
+    return mystd::get<0>(modEntry)(&mystd::get<1>(MOD), game);
+  };
+
   Game game(LANES, FRAGMENTS, MS_PER_FRAGMENT);
 
-  game.notes = generateRandomNotes(LANES, 500, 500);
+  game.notes = generateRandomNotes(LANES, 500, 500, 90);
 
   Renderer gameRenderer(game, SCREEN_WIDTH, SCREEN_HEIGHT, renderer, large_font,
                         medium_font, small_font);
@@ -195,8 +206,7 @@ int main(int argc, char *argv[]) {
     game.clearExpiredEffects(currentTime);
 
     if (currentTime - lastFragmentTime >= MS_PER_FRAGMENT) {
-      auto& modEntry = mods::getModMap()[MOD];
-game.loadFragment(mystd::get<0>(modEntry), mystd::get<1>(modEntry));
+      game.loadFragment(foo, mystd::get<1>(modEntry));
       lastFragmentTime += MS_PER_FRAGMENT;
     }
 

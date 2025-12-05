@@ -153,7 +153,8 @@ public:
   }
 
   // Called every msPerFragment ms
-  void loadFragment(void (*foo)(Game &) = nullptr, bool before = true) {
+  void loadFragment(std::function<void(Game &)> foo = nullptr,
+                    bool before = true) {
     // 1. Process bottom fragments (misses + hold sustain end)
     for (std::size_t lane = 0; lane < lanes; ++lane) {
       int8_t &bottom = highway[lane].back();
@@ -173,7 +174,7 @@ public:
         bottom = 0;
       }
     }
-    
+
     if (before && foo)
       foo(*this);
 
