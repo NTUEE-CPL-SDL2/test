@@ -1,4 +1,7 @@
 #pragma once
+#ifdef DEBUG
+#include <iostream>
+#endif
 
 #include <algorithm>
 #include <cmath>
@@ -17,19 +20,18 @@ struct NoteData {
   int8_t holds;
 };
 
-enum LaneEffect : uint32_t {
-  NO_EFFECT = 0u,
-  PERFECT = 1u,
-  GREAT = 1u << 1,
-  GOOD = 1u << 2,
-  BAD = 1u << 3,
-  MISS = 1u << 4,
-  HOLD_RELEASED = 1u << 5,
-  MASK = PERFECT | GREAT | GOOD | BAD | MISS | HOLD_RELEASED,
-  CLEAR = ~MASK
-};
+const uint32_t NO_LANE_EFFECT = 0u;
+const uint32_t PERFECT = 1u;
+const uint32_t GREAT = 1u << 1;
+const uint32_t GOOD = 1u << 2;
+const uint32_t BAD = 1u << 3;
+const uint32_t MISS = 1u << 4;
+const uint32_t HOLD_RELEASED = 1u << 5;
+const uint32_t CLEAR = ~(PERFECT | GREAT | GOOD | BAD | MISS | HOLD_RELEASED);
 
-enum CenterEffect : uint32_t { NO_EFFECT = 0u, COMBO = 1u, SCORE = 1u << 1 };
+const uint32_t NO_CENTER_EFFECT = 0u;
+const uint32_t COMBO = 1u;
+const uint32_t SCORE = 1u << 1;
 
 class Game {
 public:
@@ -53,13 +55,13 @@ public:
 
   std::size_t nowFragment = 0;
 
-  mystd::vector<LaneEffect> laneEffects;
-  CenterEffect centerEffect;
+  mystd::vector<uint32_t> laneEffects;
+  uint32_t centerEffect;
 
 public:
   Game(std::size_t lanes_, std::size_t fragments_, uint64_t mpf)
       : lanes(lanes_), fragments(fragments_), msPerFragment(mpf),
-        centerEffect(NO_EFFECT) {
+        centerEffect(NO_CENTER_EFFECT) {
     highway.reserve(lanes);
     for (uint8_t i = 0; i < lanes; ++i) {
       highway.emplace_back(mystd::circulate<int8_t, mystd::vector<int8_t>>(
@@ -67,7 +69,7 @@ public:
     }
     lanePressed.assign(lanes, false);
     holdPressedTime.assign(lanes, 0);
-    laneEffects.assign(lanes, NO_EFFECT);
+    laneEffects.assign(lanes, NO_LANE_EFFECT);
   }
 
   inline void addCombo() {
@@ -80,12 +82,12 @@ public:
 
   inline void clearEffects() {
     for (auto &i : laneEffects)
-      i = NO_EFFECT;
-    centerEffect = NO_EFFECT;
+      i = NO_LANE_EFFECT;
+    centerEffect = NO_CENTER_EFFECT;
   }
 
   void addTapScore(int64_t diffMs, std::size_t lane) {
-    double f = double(std::abs(diffMs)) / double(msPerFragment);
+    double f = ((double)std::abs(diffMs)) / double(msPerFragment);
 
     uint32_t prev = score / 1000;
 
@@ -113,11 +115,6 @@ public:
       laneEffects[lane] &= CLEAR;
       laneEffects[lane] |= BAD;
       resetCombo();
-    } else {
-      missCount++;
-      laneEffects[lane] &= CLEAR;
-      laneEffects[lane] |= MISS;
-      resetCombo();
     }
 
     if ((score / 1000 - prev) > 0)
@@ -126,7 +123,7 @@ public:
 
   void addHoldScore(int64_t heldMs, std::size_t lane) {
     heldTime += heldMs;
-    double f = double(std::abs(heldMs)) * 400.0f / double(msPerFragment);
+    double f = ((double)std::abs(heldMs)) * 400.0f / double(msPerFragment);
     laneEffects[lane] &= CLEAR;
     laneEffects[lane] |= HOLD_RELEASED;
     uint32_t prev = score / 1000;
@@ -142,6 +139,8 @@ public:
       int8_t &bottom = highway[lane].back();
       if (bottom < 0) { // tap
         missCount++;
+        laneEffects[lane] &= CLEAR;
+        laneEffects[lane] |= MISS;
         resetCombo();
         bottom = 0;
       } else if (bottom > 0) { // hold

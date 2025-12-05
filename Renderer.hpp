@@ -2,9 +2,9 @@
 
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_ttf.h>
+#include <SDL2/SDL_image.h>
 #include <cmath>
 #include <cstddef>
-#include <functional>
 #include <iostream>
 #include <string>
 #include <tuple>
@@ -30,6 +30,7 @@ private:
                      TupleHash>
       notesTextureCache;
   std::unordered_map<std::string, SDL_Texture *> textTextureCache;
+  std::unordered_map<std::string, SDL_Texture *> imageTextureCache;
 
   int screenW;
   int screenH;
@@ -40,18 +41,22 @@ private:
   TTF_Font *medium_font;
   TTF_Font *small_font;
 
+  SDL_Renderer* sdl_renderer;
+
   enum Alignment : uint8_t { ALIGN_LEFT, ALIGN_CENTER, ALIGN_RIGHT };
 
 public:
   float fps;
 
-  Renderer(Game &game_, int screenW_, int screenH_, TTF_Font *large_font_,
+  Renderer(Game &game_, int screenW_, int screenH_, SDL_Renderer* renderer, TTF_Font *large_font_,
            TTF_Font *medium_font_, TTF_Font *small_font_)
       : game(game_), screenW(screenW_), screenH(screenH_),
-        large_font(large_font_), medium_font(medium_font_),
+        sdl_renderer(renderer), large_font(large_font_), medium_font(medium_font_),
         small_font(small_font_), fps(0) {
     laneWidth = screenW / game.lanes;
     fragmentHeight = screenH / game.fragments;
+
+    loadEffectImages();
   }
 
   ~Renderer() { clearCache(); }
@@ -60,6 +65,7 @@ public:
     SDL_SetRenderDrawColor(rnd, 0, 0, 0, 255);
     SDL_RenderClear(rnd);
 
+    // Draw game field
     SDL_SetRenderDrawColor(rnd, 100, 100, 100, 255);
     for (std::size_t lane = 1; lane < game.lanes; ++lane) {
       int x = lane * laneWidth;
@@ -77,6 +83,7 @@ public:
     SDL_Rect judgmentLine = {0, judgmentLineY, screenW, 3};
     SDL_RenderFillRect(rnd, &judgmentLine);
 
+    // Render notes
     for (std::size_t lane = 0; lane < game.lanes; ++lane) {
       bool lanePressed = game.lanePressed[lane];
 
@@ -115,48 +122,30 @@ public:
         SDL_RenderCopy(rnd, texture, nullptr, &destRect);
       }
 
+      // Draw lane key hints
       int laneCenterX = lane * laneWidth + laneWidth / 2;
-
       std::string keyHint;
       switch (lane) {
-      case 0:
-        keyHint = "A";
-        break;
-      case 1:
-        keyHint = "S";
-        break;
-      case 2:
-        keyHint = "D";
-        break;
-      case 3:
-        keyHint = "F";
-        break;
-      case 4:
-        keyHint = "G";
-        break;
-      case 5:
-        keyHint = "H";
-        break;
-      case 6:
-        keyHint = "J";
-        break;
-      case 7:
-        keyHint = "K";
-        break;
-      case 8:
-        keyHint = "L";
-        break;
-      default:
-        keyHint = std::to_string(lane + 1);
-        break;
+      case 0: keyHint = "A"; break;
+      case 1: keyHint = "S"; break;
+      case 2: keyHint = "D"; break;
+      case 3: keyHint = "F"; break;
+      case 4: keyHint = "G"; break;
+      case 5: keyHint = "H"; break;
+      case 6: keyHint = "J"; break;
+      case 7: keyHint = "K"; break;
+      case 8: keyHint = "L"; break;
+      default: keyHint = std::to_string(lane + 1); break;
       }
       drawText(rnd, keyHint, laneCenterX, screenH - 30, small_font,
                {200, 200, 200, 255}, ALIGN_CENTER);
     }
 
+    // Draw score at top center
     drawText(rnd, "Score: " + std::to_string(game.score), screenW / 2, 30,
              medium_font, {255, 255, 255, 255}, ALIGN_CENTER);
 
+    // Draw stats on left
     const int statsX = 20;
     const int statsY = 30;
     const int lineHeight = 40;
@@ -178,10 +167,24 @@ public:
     drawText(rnd, "HELD TIME: " + std::to_string(game.heldTime) + " ms", statsX,
              statsY + lineHeight * 7, small_font, {100, 255, 100, 255});
 
+    // Draw info on right
     drawText(rnd, "Fragment: " + std::to_string(game.nowFragment), screenW - 20,
              30, small_font, {200, 200, 200, 255}, ALIGN_RIGHT);
     drawText(rnd, "FPS: " + std::to_string(fps), screenW - 20, 70, small_font,
              {200, 200, 200, 255}, ALIGN_RIGHT);
+
+    // Draw lane effects
+    for (std::size_t lane = 0; lane < game.lanes; ++lane) {
+      uint32_t effect = game.laneEffects[lane];
+      if (effect != NO_LANE_EFFECT) {
+        drawLaneEffect(rnd, lane, effect);
+      }
+    }
+
+    // Draw center effects
+    if (game.centerEffect != NO_CENTER_EFFECT) {
+      drawCenterEffect(rnd, game.centerEffect);
+    }
   }
 
   void clearCache() {
@@ -194,6 +197,11 @@ public:
       SDL_DestroyTexture(pair.second);
     }
     textTextureCache.clear();
+
+    for (auto &pair : imageTextureCache) {
+      SDL_DestroyTexture(pair.second);
+    }
+    imageTextureCache.clear();
   }
 
   void updateDimension(int screenW_, int screenH_) {
@@ -204,10 +212,223 @@ public:
       fragmentHeight = screenH / game.fragments;
 
       clearCache();
+      loadEffectImages();
     }
   }
 
 private:
+  void loadEffectImages() {
+    const char* effectImages[] = {
+        "res/img/perfect.png",
+        "res/img/great.png", 
+        "res/img/good.png",
+        "res/img/bad.png",
+        "res/img/miss.png",
+        "res/img/hold_released.png",
+        "res/img/combo.png",
+        "res/img/score.png"
+    };
+    
+    for (const char* path : effectImages) {
+      std::string key = path;
+      SDL_Texture* texture = loadImageTexture(path);
+      if (texture) {
+        imageTextureCache[key] = texture;
+      }
+    }
+  }
+  
+  SDL_Texture* loadImageTexture(const char* path) {
+    SDL_Texture* texture = IMG_LoadTexture(sdl_renderer, path);
+    if (!texture) {
+      std::cerr << "Failed to load image " << path << ": " << IMG_GetError() << std::endl;
+      return nullptr;
+    }
+
+    int originalWidth, originalHeight;
+    SDL_QueryTexture(texture, nullptr, nullptr, &originalWidth, &originalHeight);
+
+    float scaleFactor = std::min(screenW / 1920.0f, screenH / 1080.0f);
+    int targetWidth = static_cast<int>(originalWidth * scaleFactor * 0.5f);
+    int targetHeight = static_cast<int>(originalHeight * scaleFactor * 0.5f);
+
+    SDL_Texture* scaledTexture = SDL_CreateTexture(sdl_renderer,
+                                                   SDL_PIXELFORMAT_RGBA8888,
+                                                   SDL_TEXTUREACCESS_TARGET,
+                                                   targetWidth,
+                                                   targetHeight);
+    if (!scaledTexture) {
+      std::cerr << "Failed to create scaled texture: " << SDL_GetError() << std::endl;
+      SDL_DestroyTexture(texture);
+      return nullptr;
+    }
+    
+    SDL_SetTextureBlendMode(scaledTexture, SDL_BLENDMODE_BLEND);
+
+    SDL_Texture* prevTarget = SDL_GetRenderTarget(sdl_renderer);
+    SDL_SetRenderTarget(sdl_renderer, scaledTexture);
+
+    SDL_SetRenderDrawColor(sdl_renderer, 0, 0, 0, 0);
+    SDL_RenderClear(sdl_renderer);
+
+    SDL_Rect destRect = {0, 0, targetWidth, targetHeight};
+    SDL_RenderCopy(sdl_renderer, texture, nullptr, &destRect);
+
+    SDL_SetRenderTarget(sdl_renderer, prevTarget);
+
+    SDL_DestroyTexture(texture);
+    
+    return scaledTexture;
+  }
+  
+  void drawLaneEffect(SDL_Renderer* rnd, std::size_t lane, uint32_t effect) {
+    std::string imagePath;
+    std::string effectText;
+    SDL_Color textColor = {255, 255, 255, 255};
+    
+    switch (effect) {
+      case PERFECT:
+        imagePath = "res/img/perfect.png";
+        effectText = "PERFECT!";
+        textColor = {0, 255, 0, 255};
+        break;
+      case GREAT:
+        imagePath = "res/img/great.png";
+        effectText = "GREAT!";
+        textColor = {0, 200, 100, 255};
+        break;
+      case GOOD:
+        imagePath = "res/img/good.png";
+        effectText = "GOOD";
+        textColor = {200, 200, 0, 255};
+        break;
+      case BAD:
+        imagePath = "res/img/bad.png";
+        effectText = "BAD";
+        textColor = {255, 100, 0, 255};
+        break;
+      case MISS:
+        imagePath = "res/img/miss.png";
+        effectText = "MISS";
+        textColor = {255, 0, 0, 255};
+        break;
+      case HOLD_RELEASED:
+        imagePath = "res/img/hold_released.png";
+        effectText = "HOLD";
+        textColor = {100, 255, 100, 255};
+        break;
+      default:
+        return;
+    }
+
+    auto it = imageTextureCache.find(imagePath);
+    SDL_Texture* imageTexture = nullptr;
+    
+    if (it == imageTextureCache.end()) {
+      imageTexture = loadImageTexture(imagePath.c_str());
+      if (imageTexture) {
+        imageTextureCache[imagePath] = imageTexture;
+      }
+    } else {
+      imageTexture = it->second;
+    }
+    
+    if (!imageTexture) return;
+
+    int effectWidth, effectHeight;
+    SDL_QueryTexture(imageTexture, nullptr, nullptr, &effectWidth, &effectHeight);
+
+    int laneCenterX = lane * laneWidth + laneWidth / 2;
+    int effectY = fragmentHeight * 2;
+    
+    SDL_Rect destRect = {
+      laneCenterX - effectWidth / 2,
+      effectY - effectHeight / 2,
+      effectWidth,
+      effectHeight
+    };
+
+    SDL_RenderCopy(rnd, imageTexture, nullptr, &destRect);
+
+    drawText(rnd, effectText, laneCenterX, effectY, small_font, textColor, ALIGN_CENTER);
+  }
+  
+  void drawCenterEffect(SDL_Renderer* rnd, uint32_t effect) {
+    if (effect & COMBO) {
+      std::string imagePath = "res/img/combo.png";
+      std::string comboText = std::to_string(game.combo);
+
+      auto it = imageTextureCache.find(imagePath);
+      SDL_Texture* imageTexture = nullptr;
+      
+      if (it == imageTextureCache.end()) {
+        imageTexture = loadImageTexture(imagePath.c_str());
+        if (imageTexture) {
+          imageTextureCache[imagePath] = imageTexture;
+        }
+      } else {
+        imageTexture = it->second;
+      }
+      
+      if (imageTexture) {
+        int effectWidth, effectHeight;
+        SDL_QueryTexture(imageTexture, nullptr, nullptr, &effectWidth, &effectHeight);
+
+        effectWidth = static_cast<int>(effectWidth * 1.5f);
+        effectHeight = static_cast<int>(effectHeight * 1.5f);
+
+        SDL_Rect destRect = {
+          screenW / 2 - effectWidth / 2,
+          screenH / 3 - effectHeight / 2,
+          effectWidth,
+          effectHeight
+        };
+        
+        SDL_RenderCopy(rnd, imageTexture, nullptr, &destRect);
+
+        SDL_Color comboColor = game.combo >= 50 ? SDL_Color{255, 215, 0, 255} : 
+                              game.combo >= 20 ? SDL_Color{255, 100, 255, 255} : 
+                              SDL_Color{255, 255, 255, 255};
+        
+        drawText(rnd, comboText, screenW / 2, screenH / 3, large_font, comboColor, ALIGN_CENTER);
+        drawText(rnd, "COMBO", screenW / 2, screenH / 3 + 80, medium_font, comboColor, ALIGN_CENTER);
+      }
+    }
+    
+    if (effect & SCORE) {
+      std::string imagePath = "res/img/score.png";
+
+      auto it = imageTextureCache.find(imagePath);
+      SDL_Texture* imageTexture = nullptr;
+      
+      if (it == imageTextureCache.end()) {
+        imageTexture = loadImageTexture(imagePath.c_str());
+        if (imageTexture) {
+          imageTextureCache[imagePath] = imageTexture;
+        }
+      } else {
+        imageTexture = it->second;
+      }
+      
+      if (imageTexture) {
+        int effectWidth, effectHeight;
+        SDL_QueryTexture(imageTexture, nullptr, nullptr, &effectWidth, &effectHeight);
+
+        SDL_Rect destRect = {
+          screenW / 2 - effectWidth / 4,
+          80,
+          effectWidth / 2,
+          effectHeight / 2
+        };
+        
+        SDL_RenderCopy(rnd, imageTexture, nullptr, &destRect);
+
+        drawText(rnd, "+" + std::to_string(game.score % 1000), 
+                screenW / 2, 150, medium_font, {100, 255, 100, 255}, ALIGN_CENTER);
+      }
+    }
+  }
+
   SDL_Texture *createFragmentTexture(SDL_Renderer *rnd, int8_t fragmentValue,
                                      bool pressed, uint64_t holdPressedTime) {
     SDL_Texture *texture =

@@ -1,6 +1,11 @@
+#define DEBUG
+#ifdef DEBUG
+#include <bitset>
+#endif
+
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_ttf.h>
-#include <chrono>
+#include <SDL2/SDL_image.h>
 #include <cstddef>
 #include <iostream>
 
@@ -9,7 +14,7 @@
 #include "generate-notes.hpp"
 
 const std::size_t LANES = 4;
-const std::size_t FRAGMENTS = 12;
+const std::size_t FRAGMENTS = 10;
 const uint64_t MS_PER_FRAGMENT = 100;
 
 int main(int argc, char *argv[]) {
@@ -20,6 +25,14 @@ int main(int argc, char *argv[]) {
 
   if (TTF_Init() < 0) {
     std::cerr << "TTF could not initialize: " << TTF_GetError() << std::endl;
+    TTF_Quit();
+    SDL_Quit();
+    return 1;
+  }
+
+  int imgFlags = IMG_INIT_PNG;
+  if (!(IMG_Init(imgFlags) & imgFlags)) {
+    std::cerr << "SDL_image could not initialize: " << IMG_GetError() << std::endl;
     SDL_Quit();
     return 1;
   }
@@ -31,6 +44,7 @@ int main(int argc, char *argv[]) {
   if (!large_font || !medium_font || !small_font) {
     std::cerr << "Failed to load fonts: " << TTF_GetError() << std::endl;
     TTF_Quit();
+    IMG_Quit();
     SDL_Quit();
     return 1;
   }
@@ -62,6 +76,7 @@ int main(int argc, char *argv[]) {
     TTF_CloseFont(medium_font);
     TTF_CloseFont(small_font);
     TTF_Quit();
+    IMG_Quit();
     SDL_Quit();
     return 1;
   }
@@ -70,22 +85,23 @@ int main(int argc, char *argv[]) {
 
   game.notes = generateRandomNotes(LANES, 500, 500);
 
-  Renderer gameRenderer(game, SCREEN_WIDTH, SCREEN_HEIGHT, large_font,
+  Renderer gameRenderer(game, SCREEN_WIDTH, SCREEN_HEIGHT, renderer, large_font,
                         medium_font, small_font);
 
   bool running = true;
-  auto lastUpdateTime = std::chrono::steady_clock::now();
-  auto lastFragmentTime = lastUpdateTime;
-  auto lastClearTime = lastFragmentTime + MS_PER_FRAGMENT / 2;
-
-  Uint32 frameCount = 0;
-  auto lastFPSUpdate = std::chrono::steady_clock::now();
-
+  Uint32 currentTime = SDL_GetTicks();
+  Uint32 lastUpdateTime = SDL_GetTicks();
+  Uint32 lastFragmentTime = lastUpdateTime;
+  Uint32 lastClearTime = lastFragmentTime + MS_PER_FRAGMENT / 2;
   // Need to be moved to game state start after other states are added
-  auto gameStartTime = SDL_GetTicks();
+  Uint32 gameStartTime = lastUpdateTime;
+  Uint32 lastFPSUpdate = lastUpdateTime;
 
   while (running) {
-    auto currentTime = std::chrono::steady_clock::now();
+    Uint32 tmpCurrentTime = SDL_GetTicks();
+    float diffT = tmpCurrentTime - currentTime;
+    if (diffT > 0) gameRenderer.fps = 1000.0f / diffT;
+    currentTime = tmpCurrentTime;
 
     SDL_Event event;
     while (SDL_PollEvent(&event)) {
@@ -178,41 +194,25 @@ int main(int argc, char *argv[]) {
       }
     }
 
-    auto timeSinceLastFragment =
-        std::chrono::duration_cast<std::chrono::milliseconds>(currentTime -
-                                                              lastFragmentTime)
-            .count();
-
-    if (timeSinceLastFragment >= MS_PER_FRAGMENT) {
-      game.loadFragment();
-      lastFragmentTime += std::chrono::milliseconds(MS_PER_FRAGMENT);
-      timeSinceLastFragment -= MS_PER_FRAGMENT;
+    if (currentTime - lastFragmentTime >= MS_PER_FRAGMENT) {
+        game.loadFragment();
+        lastFragmentTime += MS_PER_FRAGMENT;
     }
 
-    auto timeSinceLastClear =
-        std::chrono::duration_cast<std::chrono::milliseconds>(currentTime -
-                                                              lastClearTime)
-            .count();
-
-    if (timeSinceLastClear >= MS_PER_FRAGMENT) {
-      game.clearEffects();
+    if (currentTime - lastClearTime >= MS_PER_FRAGMENT) {
+        game.clearEffects();
+        lastClearTime += MS_PER_FRAGMENT;
     }
 
     gameRenderer.render(renderer);
 
-    frameCount++;
-    auto fpsUpdateTime = std::chrono::steady_clock::now();
-    auto fpsElapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
-                          fpsUpdateTime - lastFPSUpdate)
-                          .count();
-
-    if (fpsElapsed > 1000) {
-      gameRenderer.fps = frameCount * 1000.0f / fpsElapsed;
-      frameCount = 0;
-      lastFPSUpdate = fpsUpdateTime;
-    }
-
     SDL_RenderPresent(renderer);
+#ifdef DEBUG
+    std::cout << "Lane Effects:\n";
+    for (auto i : game.laneEffects)
+        std::cout << "  " << std::bitset<32>(i) << std::endl;
+    std::cout << "Center Effects: " << std::bitset<32>(game.centerEffect) << std::endl;
+ #endif
   }
 
   SDL_DestroyRenderer(renderer);
@@ -221,6 +221,7 @@ int main(int argc, char *argv[]) {
   TTF_CloseFont(medium_font);
   TTF_CloseFont(small_font);
   TTF_Quit();
+  IMG_Quit();
   SDL_Quit();
 
   return 0;

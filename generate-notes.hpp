@@ -1,7 +1,6 @@
 #include <cstdint>
 #include <cstdlib>
 #include <ctime>
-#include <iostream>
 #include <vector>
 
 #include "Game.hpp"
