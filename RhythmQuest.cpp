@@ -1,8 +1,3 @@
-#define DEBUG
-#ifdef DEBUG
-#include <bitset>
-#endif
-
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_image.h>
 #include <SDL2/SDL_ttf.h>
@@ -93,10 +88,8 @@ int main(int argc, char *argv[]) {
   Uint32 currentTime = SDL_GetTicks();
   Uint32 lastUpdateTime = SDL_GetTicks();
   Uint32 lastFragmentTime = lastUpdateTime;
-  Uint32 lastClearTime = lastFragmentTime + MS_PER_FRAGMENT / 2;
   // Need to be moved to game state start after other states are added
   Uint32 gameStartTime = lastUpdateTime;
-  Uint32 lastFPSUpdate = lastUpdateTime;
 
   while (running) {
     Uint32 tmpCurrentTime = SDL_GetTicks();
@@ -196,26 +189,16 @@ int main(int argc, char *argv[]) {
       }
     }
 
+    game.clearExpiredEffects(currentTime);
+
     if (currentTime - lastFragmentTime >= MS_PER_FRAGMENT) {
       game.loadFragment();
       lastFragmentTime += MS_PER_FRAGMENT;
     }
 
-    if (currentTime - lastClearTime >= MS_PER_FRAGMENT) {
-      game.clearEffects();
-      lastClearTime += MS_PER_FRAGMENT;
-    }
-
     gameRenderer.render(renderer);
 
     SDL_RenderPresent(renderer);
-#ifdef DEBUG
-    std::cout << "Lane Effects:\n";
-    for (auto i : game.laneEffects)
-      std::cout << "  " << std::bitset<32>(i) << std::endl;
-    std::cout << "Center Effects: " << std::bitset<32>(game.centerEffect)
-              << std::endl;
-#endif
   }
 
   SDL_DestroyRenderer(renderer);

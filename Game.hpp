@@ -8,11 +8,18 @@
 #include <cstddef>
 #include <cstdint>
 
-#include "include/circulate.hpp"
 #include "include/vector.hpp"
+#include "include/circulate.hpp"
+#include "include/priority_queue.hpp"
 
 // int8_t: -1 = tap, -2 = invisible tap, >=1 = number of remaining fragments to
 // hold, 0 = empty
+
+template<class T>
+class game_priority_queue : public mystd::priority_queue<T> {
+public:
+  using mystd::priority_queue<T>::c;
+};
 
 struct NoteData {
   std::size_t startFragment;
@@ -29,9 +36,17 @@ const uint32_t MISS = 1u << 4;
 const uint32_t HOLD_RELEASED = 1u << 5;
 const uint32_t CLEAR = ~(PERFECT | GREAT | GOOD | BAD | MISS | HOLD_RELEASED);
 
-const uint32_t NO_CENTER_EFFECT = 0u;
-const uint32_t COMBO = 1u;
-const uint32_t SCORE = 1u << 1;
+const uint32_t  COMBO = 1u;
+const uint32_t  SCORE = 2u;
+
+struct Effect {
+    uint32_t content;
+    uint64_t endTime;
+};
+
+bool operator<(Effect lhs, Effect rhs) {
+  return lhs.endTime > rhs.endTime;
+}
 
 class Game {
 public:
@@ -55,13 +70,12 @@ public:
 
   std::size_t nowFragment = 0;
 
-  mystd::vector<uint32_t> laneEffects;
-  uint32_t centerEffect;
+  mystd::vector<Effect> laneEffects;
+  game_priority_queue<Effect> centerEffects = game_priority_queue<Effect>();
 
 public:
   Game(std::size_t lanes_, std::size_t fragments_, uint64_t mpf)
-      : lanes(lanes_), fragments(fragments_), msPerFragment(mpf),
-        centerEffect(NO_CENTER_EFFECT) {
+      : lanes(lanes_), fragments(fragments_), msPerFragment(mpf) {
     highway.reserve(lanes);
     for (uint8_t i = 0; i < lanes; ++i) {
       highway.emplace_back(mystd::circulate<int8_t, mystd::vector<int8_t>>(
@@ -69,67 +83,75 @@ public:
     }
     lanePressed.assign(lanes, false);
     holdPressedTime.assign(lanes, 0);
-    laneEffects.assign(lanes, NO_LANE_EFFECT);
+    laneEffects.assign(lanes, {NO_LANE_EFFECT, 0});
   }
 
-  inline void addCombo() {
+  inline void addCombo(uint64_t nowMs) {
     combo++;
     maxCombo = std::max(maxCombo, combo);
-    centerEffect |= COMBO;
+    if (combo > 1) centerEffects.push({COMBO, nowMs + msPerFragment * fragments});
   }
 
   inline void resetCombo() { combo = 0; }
 
-  inline void clearEffects() {
-    for (auto &i : laneEffects)
-      i = NO_LANE_EFFECT;
-    centerEffect = NO_CENTER_EFFECT;
+  inline void clearExpiredEffects(uint64_t nowMs) {
+    for (auto& i : laneEffects)
+      if (i.endTime <= nowMs) i = {NO_LANE_EFFECT, 0};
+
+    while (!centerEffects.empty() &&
+           centerEffects.top().endTime <= nowMs) {
+        centerEffects.pop();
+    }
   }
 
-  void addTapScore(int64_t diffMs, std::size_t lane) {
-    double f = ((double)std::abs(diffMs)) / double(msPerFragment);
+  void addTapScore(uint64_t nowMs, std::size_t lane) {
+    double f = (double)(nowMs - nowFragment * msPerFragment) / double(msPerFragment);
 
     uint32_t prev = score / 1000;
 
     if (f <= 0.20) {
       score += 1000;
       perfectCount++;
-      laneEffects[lane] &= CLEAR;
-      laneEffects[lane] |= PERFECT;
-      addCombo();
+      laneEffects[lane].content &= CLEAR;
+      laneEffects[lane].content |= PERFECT;
+      addCombo(nowMs);
     } else if (f <= 0.40) {
       score += 700;
       greatCount++;
-      laneEffects[lane] &= CLEAR;
-      laneEffects[lane] |= GREAT;
-      addCombo();
+      laneEffects[lane].content &= CLEAR;
+      laneEffects[lane].content |= GREAT;
+      addCombo(nowMs);
     } else if (f <= 0.60) {
       score += 300;
       goodCount++;
-      laneEffects[lane] &= CLEAR;
-      laneEffects[lane] |= GOOD;
-      addCombo();
+      laneEffects[lane].content &= CLEAR;
+      laneEffects[lane].content |= GOOD;
+      addCombo(nowMs);
     } else if (f <= 1.00) {
       score += 100;
       badCount++;
-      laneEffects[lane] &= CLEAR;
-      laneEffects[lane] |= BAD;
+      laneEffects[lane].content &= CLEAR;
+      laneEffects[lane].content |= BAD;
       resetCombo();
     }
+    
+    laneEffects[lane].endTime = nowMs + msPerFragment * fragments;
 
     if ((score / 1000 - prev) > 0)
-      centerEffect |= SCORE;
+      centerEffects.push({SCORE, nowMs + msPerFragment * fragments});
   }
 
-  void addHoldScore(int64_t heldMs, std::size_t lane) {
+  void addHoldScore(uint64_t nowMs, std::size_t lane) {
+    uint64_t heldMs = nowMs - holdPressedTime[lane];
     heldTime += heldMs;
-    double f = ((double)std::abs(heldMs)) * 400.0f / double(msPerFragment);
-    laneEffects[lane] &= CLEAR;
-    laneEffects[lane] |= HOLD_RELEASED;
+    double f = (double)heldMs * 400.0f / double(msPerFragment);
+    laneEffects[lane].content &= CLEAR;
+    laneEffects[lane].content |= HOLD_RELEASED;
+    laneEffects[lane].endTime = nowMs + msPerFragment * fragments;
     uint32_t prev = score / 1000;
     score += static_cast<uint32_t>(f);
-    if ((score / 1000 - prev) > 0)
-      centerEffect |= SCORE;
+    if ((score / 1000 - prev) > 0) {
+      centerEffects.push({SCORE, nowMs + msPerFragment * fragments}); std::cout << "a";}
   }
 
   // Called once every msPerFragment ms
@@ -137,17 +159,17 @@ public:
     // 1. Process bottom fragments (misses + hold sustain end)
     for (std::size_t lane = 0; lane < lanes; ++lane) {
       int8_t &bottom = highway[lane].back();
+      uint64_t nowMs = (nowFragment + 1) * msPerFragment;
       if (bottom < 0) { // tap
         missCount++;
-        laneEffects[lane] &= CLEAR;
-        laneEffects[lane] |= MISS;
+        laneEffects[lane].content &= CLEAR;
+        laneEffects[lane].content |= MISS;
+        laneEffects[lane].endTime = nowMs + msPerFragment * fragments;
         resetCombo();
         bottom = 0;
       } else if (bottom > 0) { // hold
         if (lanePressed[lane]) {
-          uint64_t nowMs = (nowFragment + 1) * msPerFragment;
-          int64_t heldMs = nowMs - holdPressedTime[lane];
-          addHoldScore(heldMs, lane);
+          addHoldScore(nowMs, lane);
           holdPressedTime[lane] = nowMs;
         }
         bottom = 0;
@@ -184,7 +206,7 @@ public:
     int8_t &bottom = highway[lane].back();
 
     if (bottom < 0) { // tap hit
-      addTapScore(nowMs - nowFragment * msPerFragment, lane);
+      addTapScore(nowMs, lane);
       bottom = 0;
       return;
     } else if (bottom > 0) { // hold pressed
@@ -197,8 +219,7 @@ public:
     int8_t &bottom = highway[lane].back();
 
     if (bottom > 0) { // hold released
-      int64_t heldMs = nowMs - holdPressedTime[lane];
-      addHoldScore(heldMs, lane);
+      addHoldScore(nowMs, lane);
       bottom = 0;
     }
   }

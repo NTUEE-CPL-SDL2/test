@@ -195,15 +195,15 @@ public:
 
     // Draw lane effects
     for (std::size_t lane = 0; lane < game.lanes; ++lane) {
-      uint32_t effect = game.laneEffects[lane];
+      uint32_t effect = game.laneEffects[lane].content;
       if (effect != NO_LANE_EFFECT) {
         drawLaneEffect(rnd, lane, effect);
       }
     }
 
     // Draw center effects
-    if (game.centerEffect != NO_CENTER_EFFECT) {
-      drawCenterEffect(rnd, game.centerEffect);
+    for (std::size_t i = 0; i < game.centerEffects.size(); ++i) {
+      drawCenterEffect(rnd, game.centerEffects.c[i].content);
     }
   }
 
@@ -264,7 +264,7 @@ private:
     SDL_QueryTexture(texture, nullptr, nullptr, &originalWidth,
                      &originalHeight);
 
-    float scaleFactor = std::min(screenW / 1920.0f, screenH / 1080.0f);
+    float scaleFactor = screenW / 1080.0f / game.lanes;
     int targetWidth = static_cast<int>(originalWidth * scaleFactor * 0.5f);
     int targetHeight = static_cast<int>(originalHeight * scaleFactor * 0.5f);
 
@@ -356,14 +356,14 @@ private:
                      &effectHeight);
 
     int laneCenterX = lane * laneWidth + laneWidth / 2;
-    int effectY = fragmentHeight * 2;
+    int effectY = fragmentHeight * game.fragments * 2 / 3;
 
     SDL_Rect destRect = {laneCenterX - effectWidth / 2,
                          effectY - effectHeight / 2, effectWidth, effectHeight};
 
     SDL_RenderCopy(rnd, imageTexture, nullptr, &destRect);
 
-    drawText(rnd, effectText, laneCenterX, effectY, small_font, textColor,
+    drawText(rnd, effectText, laneCenterX, effectY + effectHeight / 2, small_font, textColor,
              ALIGN_CENTER);
   }
 
@@ -405,7 +405,7 @@ private:
 
         drawText(rnd, comboText, screenW / 2, screenH / 3, large_font,
                  comboColor, ALIGN_CENTER);
-        drawText(rnd, "COMBO", screenW / 2, screenH / 3 + 80, medium_font,
+        drawText(rnd, "COMBO: " + std::to_string(game.combo), screenW / 2, screenH / 3 + 80, medium_font,
                  comboColor, ALIGN_CENTER);
       }
     }
@@ -435,7 +435,7 @@ private:
 
         SDL_RenderCopy(rnd, imageTexture, nullptr, &destRect);
 
-        drawText(rnd, "+" + std::to_string(game.score % 1000), screenW / 2, 150,
+        drawText(rnd, "SCORE: " + std::to_string(game.score), screenW / 2, 150,
                  medium_font, {100, 255, 100, 255}, ALIGN_CENTER);
       }
     }
