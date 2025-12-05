@@ -3,7 +3,9 @@
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_ttf.h>
 #include <cmath>
+#include <cstddef>
 #include <functional>
+#include <iostream>
 #include <string>
 #include <tuple>
 #include <unordered_map>
@@ -12,8 +14,14 @@
 
 #include "Game.hpp"
 
+/*
+Effects:
+resources/img:
+
+*/
+
 struct TupleHash {
-  size_t operator()(const mystd::tuple<int8_t, bool, uint64_t> &t) const {
+  std::size_t operator()(const mystd::tuple<int8_t, bool, uint64_t> &t) const {
     auto hash1 = std::hash<int8_t>{}(mystd::get<0>(t));
     auto hash2 = std::hash<bool>{}(mystd::get<1>(t));
     auto hash3 = std::hash<uint64_t>{}(mystd::get<2>(t));
@@ -38,7 +46,7 @@ private:
   TTF_Font *medium_font;
   TTF_Font *small_font;
 
-  enum TextAlignment { ALIGN_LEFT, ALIGN_CENTER, ALIGN_RIGHT };
+  enum Alignment : uint8_t { ALIGN_LEFT, ALIGN_CENTER, ALIGN_RIGHT };
 
 public:
   float fps;
@@ -59,13 +67,13 @@ public:
     SDL_RenderClear(rnd);
 
     SDL_SetRenderDrawColor(rnd, 100, 100, 100, 255);
-    for (size_t lane = 1; lane < game.lanes; ++lane) {
+    for (std::size_t lane = 1; lane < game.lanes; ++lane) {
       int x = lane * laneWidth;
       SDL_RenderDrawLine(rnd, x, 0, x, screenH);
     }
 
     SDL_SetRenderDrawColor(rnd, 60, 60, 60, 255);
-    for (size_t fragment = 1; fragment < game.fragments; ++fragment) {
+    for (std::size_t fragment = 1; fragment < game.fragments; ++fragment) {
       int y = fragment * fragmentHeight;
       SDL_RenderDrawLine(rnd, 0, y, screenW, y);
     }
@@ -75,10 +83,10 @@ public:
     SDL_Rect judgmentLine = {0, judgmentLineY, screenW, 3};
     SDL_RenderFillRect(rnd, &judgmentLine);
 
-    for (size_t lane = 0; lane < game.lanes; ++lane) {
+    for (std::size_t lane = 0; lane < game.lanes; ++lane) {
       bool lanePressed = game.lanePressed[lane];
 
-      for (size_t fragmentIdx = 0; fragmentIdx < game.fragments;
+      for (std::size_t fragmentIdx = 0; fragmentIdx < game.fragments;
            ++fragmentIdx) {
         int8_t fragmentValue = game.highway[lane][fragmentIdx];
         uint64_t holdTime = 0;
@@ -220,7 +228,7 @@ private:
     SDL_RenderClear(rnd);
 
     SDL_Color color;
-    if (fragmentValue < 0) {
+    if (fragmentValue == -1) {
       color = {255, 50, 50, 255};
     } else if (fragmentValue > 0) {
       if (pressed) {
@@ -241,7 +249,7 @@ private:
     SDL_Rect fillRect = {1, 1, laneWidth - 2, fragmentHeight - 2};
     SDL_RenderFillRect(rnd, &fillRect);
 
-    if (fragmentValue != 0) {
+    if (fragmentValue >= -1) {
       SDL_Color borderColor = fragmentValue < 0 ? SDL_Color{255, 200, 200, 255}
                                                 : SDL_Color{200, 255, 200, 255};
 
@@ -290,8 +298,7 @@ private:
   }
 
   void drawText(SDL_Renderer *rnd, const std::string &text, int x, int y,
-                TTF_Font *font, SDL_Color color,
-                TextAlignment align = ALIGN_LEFT) {
+                TTF_Font *font, SDL_Color color, Alignment align = ALIGN_LEFT) {
     if (text.empty())
       return;
 

@@ -1,11 +1,16 @@
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_ttf.h>
 #include <chrono>
+#include <cstddef>
 #include <iostream>
 
 #include "Game.hpp"
 #include "Renderer.hpp"
 #include "generate-notes.hpp"
+
+const std::size_t LANES = 4;
+const std::size_t FRAGMENTS = 12;
+const uint64_t MS_PER_FRAGMENT = 100;
 
 int main(int argc, char *argv[]) {
   if (SDL_Init(SDL_INIT_VIDEO) < 0) {
@@ -61,10 +66,6 @@ int main(int argc, char *argv[]) {
     return 1;
   }
 
-  const size_t LANES = 4;
-  const size_t FRAGMENTS = 12;
-  const uint64_t MS_PER_FRAGMENT = 100;
-
   Game game(LANES, FRAGMENTS, MS_PER_FRAGMENT);
 
   game.notes = generateRandomNotes(LANES, 500, 500);
@@ -75,6 +76,7 @@ int main(int argc, char *argv[]) {
   bool running = true;
   auto lastUpdateTime = std::chrono::steady_clock::now();
   auto lastFragmentTime = lastUpdateTime;
+  auto lastClearTime = lastFragmentTime + MS_PER_FRAGMENT / 2;
 
   Uint32 frameCount = 0;
   auto lastFPSUpdate = std::chrono::steady_clock::now();
@@ -100,7 +102,7 @@ int main(int argc, char *argv[]) {
           running = false;
         }
 
-        size_t lane = -1;
+        std::size_t lane = -1;
         switch (event.key.keysym.sym) {
         case SDLK_a:
           lane = 0;
@@ -137,7 +139,7 @@ int main(int argc, char *argv[]) {
           game.keyPressed(lane, SDL_GetTicks() - gameStartTime);
         }
       } else if (event.type == SDL_KEYUP) {
-        size_t lane = -1;
+        std::size_t lane = -1;
         switch (event.key.keysym.sym) {
         case SDLK_a:
           lane = 0;
@@ -181,10 +183,19 @@ int main(int argc, char *argv[]) {
                                                               lastFragmentTime)
             .count();
 
-    while (timeSinceLastFragment >= MS_PER_FRAGMENT) {
+    if (timeSinceLastFragment >= MS_PER_FRAGMENT) {
       game.loadFragment();
       lastFragmentTime += std::chrono::milliseconds(MS_PER_FRAGMENT);
       timeSinceLastFragment -= MS_PER_FRAGMENT;
+    }
+
+    auto timeSinceLastClear =
+        std::chrono::duration_cast<std::chrono::milliseconds>(currentTime -
+                                                              lastClearTime)
+            .count();
+
+    if (timeSinceLastClear >= MS_PER_FRAGMENT) {
+      game.clearEffects();
     }
 
     gameRenderer.render(renderer);
