@@ -4,8 +4,8 @@
 #endif
 
 #include <SDL2/SDL.h>
-#include <SDL2/SDL_ttf.h>
 #include <SDL2/SDL_image.h>
+#include <SDL2/SDL_ttf.h>
 #include <cstddef>
 #include <iostream>
 
@@ -32,7 +32,8 @@ int main(int argc, char *argv[]) {
 
   int imgFlags = IMG_INIT_PNG;
   if (!(IMG_Init(imgFlags) & imgFlags)) {
-    std::cerr << "SDL_image could not initialize: " << IMG_GetError() << std::endl;
+    std::cerr << "SDL_image could not initialize: " << IMG_GetError()
+              << std::endl;
     SDL_Quit();
     return 1;
   }
@@ -100,7 +101,8 @@ int main(int argc, char *argv[]) {
   while (running) {
     Uint32 tmpCurrentTime = SDL_GetTicks();
     float diffT = tmpCurrentTime - currentTime;
-    if (diffT > 0) gameRenderer.fps = 1000.0f / diffT;
+    if (diffT > 0)
+      gameRenderer.fps = 1000.0f / diffT;
     currentTime = tmpCurrentTime;
 
     SDL_Event event;
@@ -195,13 +197,13 @@ int main(int argc, char *argv[]) {
     }
 
     if (currentTime - lastFragmentTime >= MS_PER_FRAGMENT) {
-        game.loadFragment();
-        lastFragmentTime += MS_PER_FRAGMENT;
+      game.loadFragment();
+      lastFragmentTime += MS_PER_FRAGMENT;
     }
 
     if (currentTime - lastClearTime >= MS_PER_FRAGMENT) {
-        game.clearEffects();
-        lastClearTime += MS_PER_FRAGMENT;
+      game.clearEffects();
+      lastClearTime += MS_PER_FRAGMENT;
     }
 
     gameRenderer.render(renderer);
@@ -210,9 +212,10 @@ int main(int argc, char *argv[]) {
 #ifdef DEBUG
     std::cout << "Lane Effects:\n";
     for (auto i : game.laneEffects)
-        std::cout << "  " << std::bitset<32>(i) << std::endl;
-    std::cout << "Center Effects: " << std::bitset<32>(game.centerEffect) << std::endl;
- #endif
+      std::cout << "  " << std::bitset<32>(i) << std::endl;
+    std::cout << "Center Effects: " << std::bitset<32>(game.centerEffect)
+              << std::endl;
+#endif
   }
 
   SDL_DestroyRenderer(renderer);
