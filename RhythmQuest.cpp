@@ -102,7 +102,7 @@ int main(int argc, char *argv[]) {
   Uint32 currentTime = SDL_GetTicks();
   Uint32 lastUpdateTime = SDL_GetTicks();
   Uint32 lastFragmentTime = lastUpdateTime;
-  // Need to be moved to game state start after other states are added
+  // Need to be moved to game state start after other states are added and change to recount at every song start and need fine-tuning based once error >= 1ms
   Uint32 gameStartTime = lastUpdateTime;
 
   while (running) {
