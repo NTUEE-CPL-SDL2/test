@@ -2,8 +2,8 @@
 
 #include "../include/tuple.hpp"
 
-#include "Game.hpp"
-#include "Mods.hpp"
+#include "../Game.hpp"
+#include "../Mods.hpp"
 
 template <bool hold_alive>
 void gameOfLife(const mystd::tuple<uint8_t, uint8_t> &t,
