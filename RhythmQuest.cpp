@@ -9,13 +9,16 @@
 #include <functional>
 #include <iostream>
 
-#include "include/tuple.hpp"
-
 #include "Game.hpp"
 #include "Mods.hpp"
 #include "Renderer.hpp"
 #include "generate-notes.hpp"
 #include "mods/GameOfLife.hpp"
+
+
+TTF_Font *large_font, *medium_font, *small_font;
+int SCREEN_WIDTH = 1024;
+int SCREEN_HEIGHT = 768;
 
 std::size_t LANES;
 std::size_t FRAGMENTS;
@@ -28,18 +31,17 @@ Renderer* gameRenderer = static_cast<Renderer*>(::operator new(sizeof(Renderer))
 
 enum class GameState { SETTINGS, COUNTDOWN, GAME, PAUSE };
 
-void showSettings(SDL_Renderer *renderer, TTF_Font *large_font, TTF_Font *medium_font, TTF_Font *small_font, int SCREEN_WIDTH, int SCREEN_HEIGHT) {
+void showSettings(SDL_Renderer *renderer) {
   std::cout << "=== Settings Menu ===" << std::endl;
-  std::cout << "1. Mod Settings" << std::endl;
-  std::cout << "2. Audio Settings" << std::endl;
-  std::cout << "3. Gameplay Settings" << std::endl;
-  std::cout << "4. Back to Game" << std::endl;
+  std::cout << "1. Set LANE and FRAGMENTS" << std::endl;
+  std::cout << "2. Set MOD. If use MOD, call mod settings, after it back to this settings" << std::endl;
+  std::cout << "3. Exit Game button" << std::endl;
+  std::cout << "4. OK button" << std::endl;
 
   LANES = 9;
   FRAGMENTS = 10;
   MS_PER_FRAGMENT = 100;
-  MOD = "Game of Life (hold notes counted as alive cell, before new fragments "
-        "load)";
+  if (!getModMap().empty()) MOD = getModMap().begin()->first;
   modSettingsFunc = mystd::get<2>(getModMap()[MOD]);
   new (game) Game(LANES, FRAGMENTS, MS_PER_FRAGMENT);
   game->notes = generateRandomNotes(LANES, 500, 500, 70);
@@ -53,21 +55,21 @@ void showSettings(SDL_Renderer *renderer, TTF_Font *large_font, TTF_Font *medium
   std::cout << "Settings loaded. Entering game..." << std::endl;
 }
 
-void showCountdown(SDL_Renderer *renderer, TTF_Font *large_font) {
+void showCountdown(SDL_Renderer *renderer) {
+    // use large font
   std::cout << "Starting countdown..." << std::endl;
   for (int i = 3; i > 0; --i) {
     std::cout << i << "..." << std::endl;
     SDL_Delay(1000);
   }
-  std::cout << "GO!" << std::endl;
+  std::cout << "GO!" << std::endl; // show res/img/GO.png and render GO! on it
 }
 
-void showPauseMenu() {
+void showPauseMenu(SDL_Renderer *renderer) {
   std::cout << "=== Pause Menu ===" << std::endl;
   std::cout << "1. Resume" << std::endl;
-  std::cout << "2. Restart" << std::endl;
-  std::cout << "3. Settings" << std::endl;
-  std::cout << "4. Exit to Menu" << std::endl;
+  std::cout << "2. New Game" << std::endl;
+  std::cout << "3. Exit Game Button" << std::endl;
 }
 
 int main(int argc, char *argv[]) {
@@ -92,9 +94,9 @@ int main(int argc, char *argv[]) {
     return 1;
   }
 
-  TTF_Font *large_font = TTF_OpenFont("XITS-Regular.otf", 72);
-  TTF_Font *medium_font = TTF_OpenFont("XITS-Regular.otf", 48);
-  TTF_Font *small_font = TTF_OpenFont("XITS-Regular.otf", 36);
+  large_font = TTF_OpenFont("XITS-Regular.otf", 72);
+  medium_font = TTF_OpenFont("XITS-Regular.otf", 48);
+  small_font = TTF_OpenFont("XITS-Regular.otf", 36);
 
   if (!large_font || !medium_font || !small_font) {
     std::cerr << "Failed to load fonts: " << TTF_GetError() << std::endl;
@@ -103,9 +105,6 @@ int main(int argc, char *argv[]) {
     SDL_Quit();
     return 1;
   }
-
-  int SCREEN_WIDTH = 1024;
-  int SCREEN_HEIGHT = 768;
 
   SDL_Window *window = SDL_CreateWindow(
       "Rhythm Quest", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
@@ -272,12 +271,12 @@ int main(int argc, char *argv[]) {
 
     switch (currentState) {
     case GameState::SETTINGS:
-      showSettings(renderer, large_font, medium_font, small_font, SCREEN_WIDTH, SCREEN_HEIGHT);
+      showSettings(renderer);
       currentState = GameState::COUNTDOWN;
       break;
 
     case GameState::COUNTDOWN:
-      showCountdown(renderer, large_font);
+      showCountdown(renderer);
       gameStartTime = SDL_GetTicks();
       lastFragmentTime = gameStartTime;
       currentState = GameState::GAME;
@@ -291,29 +290,12 @@ int main(int argc, char *argv[]) {
                           mystd::get<1>(getModMap()[MOD]));
         lastFragmentTime += MS_PER_FRAGMENT;
       }
+      gameRenderer->render(renderer);
 
       break;
 
     case GameState::PAUSE:
-      showPauseMenu();
-      break;
-    }
-
-    switch (currentState) {
-    case GameState::SETTINGS:
-      gameRenderer->render(renderer);
-      break;
-
-    case GameState::COUNTDOWN:
-      gameRenderer->render(renderer);
-      break;
-
-    case GameState::GAME:
-      gameRenderer->render(renderer);
-      break;
-
-    case GameState::PAUSE:
-      gameRenderer->render(renderer);
+      showPauseMenu(renderer);
       break;
     }
 
