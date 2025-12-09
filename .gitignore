@@ -1,0 +1,14 @@
+# ignore binaries
+*.exe
+*.dll
+*.obj
+*.o
+
+# ignore VSCode etc.
+.vscode/
+.idea/
+
+# ignore build folders
+build/
+bin/
+out/
