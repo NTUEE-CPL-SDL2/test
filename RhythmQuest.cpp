@@ -307,9 +307,6 @@ int main(int argc, char *argv[]) {
       break;
     }
 
-    SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
-    SDL_RenderClear(renderer);
-
     switch (currentState) {
     case GameState::SETTINGS:
       gameRenderer->render(renderer);
