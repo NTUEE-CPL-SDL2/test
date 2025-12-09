@@ -9,18 +9,15 @@
 
 #include "Game.hpp"
 
-namespace mods {
-
 using ModFunc = void (*)(const void *, Game &game);
+using SettingsFunc = bool (*)();
 
-inline std::unordered_map<std::string, mystd::tuple<ModFunc, ModFunc>> &
+inline std::unordered_map<std::string, mystd::tuple<ModFunc, ModFunc, SettingsFunc>> &
 getModMap() {
-  static std::unordered_map<std::string, mystd::tuple<ModFunc, ModFunc>> modMap;
+  static std::unordered_map<std::string, mystd::tuple<ModFunc, ModFunc, SettingsFunc>> modMap;
   return modMap;
 }
 
-inline void registerMod(const std::string &name, ModFunc foo, ModFunc bar) {
-  getModMap()[name] = mystd::make_tuple(foo, bar);
+inline void registerMod(const std::string &name, ModFunc foo, ModFunc bar, SettingsFunc set) {
+  getModMap()[name] = mystd::make_tuple(foo, bar, set);
 }
-
-} // namespace mods

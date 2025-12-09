@@ -1,83 +1,234 @@
 #include <string>
+#include <functional>
+#include <SDL2/SDL.h>
+#include <SDL2/SDL_ttf.h>
 
 #include "../include/array.hpp"
+#include "../include/tuple.hpp"
 
 #include "../Game.hpp"
 #include "../Mods.hpp"
 
+namespace gameOfLife {
+
+static mystd::array<uint8_t, 2> currentRules = {0b11111111, 0b00000000};
+
 template <bool hold_alive>
-void gameOfLife(const mystd::array<uint8_t, 2> &t,
-                Game &game) { // array: survive, revive
-  auto oldHighway = game.highway;
+void gameOfLife(Game &game) {
+    auto oldHighway = game.highway;
+    const auto& rules = getRules();
 
-  auto isAlive = [](int8_t val) -> bool {
-    if (val == -1)
-      return true;
-    if (val > 0)
-      return hold_alive;
-    return false;
-  };
+    auto isAlive = [](int8_t val) -> bool {
+        if (val == -1)
+            return true;
+        if (val > 0)
+            return hold_alive;
+        return false;
+    };
 
-  for (std::size_t lane = 0; lane < game.lanes; ++lane) {
-    for (std::size_t f = 0; f < game.fragments; ++f) {
-      int aliveCount = 0;
+    for (std::size_t lane = 0; lane < game.lanes; ++lane) {
+        for (std::size_t f = 0; f < game.fragments; ++f) {
+            int aliveCount = 0;
 
-      for (int dl = -1; dl <= 1; ++dl) {
-        for (int df = -1; df <= 1; ++df) {
-          if (dl == 0 && df == 0)
-            continue;
-          int nl = static_cast<int>(lane) + dl;
-          int nf = static_cast<int>(f) + df;
+            for (int dl = -1; dl <= 1; ++dl) {
+                for (int df = -1; df <= 1; ++df) {
+                    if (dl == 0 && df == 0)
+                        continue;
+                    int nl = static_cast<int>(lane) + dl;
+                    int nf = static_cast<int>(f) + df;
 
-          if (nl >= 0 && nl < static_cast<int>(game.lanes) && nf >= 0 &&
-              nf < static_cast<int>(game.fragments)) {
-            if (isAlive(oldHighway[nl][nf]))
-              aliveCount++;
-          }
+                    if (nl >= 0 && nl < static_cast<int>(game.lanes) && nf >= 0 &&
+                        nf < static_cast<int>(game.fragments)) {
+                        if (isAlive(oldHighway[nl][nf]))
+                            aliveCount++;
+                    }
+                }
+            }
+
+            int8_t &cell = game.highway[lane][f];
+
+            if (cell == -1) { // alive
+                if (!((rules[0] >> aliveCount) & 0b1)) {
+                    cell = 0; // die
+                }
+            } else if (cell == 0) { // dead
+                if (!((rules[1] >> aliveCount) & 0b1)) {
+                    cell = -1; // born
+                }
+            }
+            // >0 (hold) stays unchanged
         }
-      }
-
-      int8_t &cell = game.highway[lane][f];
-
-      if (cell == -1) { // alive
-        if (!((t[0] >> aliveCount) & 0b1)) {
-          cell = 0; // die
-        }
-      } else if (cell == 0) { // dead
-        if (!((t[1] >> aliveCount) & 0b1)) {
-          cell = -1; // born
-        }
-      }
-      // >0 (hold) stays unchanged
     }
-  }
 }
 
-void gameOfLifeHoldAlive(const void *pt, Game &game) {
-  return gameOfLife<true>(
-      *static_cast<const mystd::array<uint8_t, 2> *>(pt), game);
+void gameOfLifeHoldAlive(Game &game) {
+    return gameOfLife<true>(game);
 }
 
-void gameOfLifeHoldDead(const void *pt, Game &game) {
-  return gameOfLife<false>(
-      *static_cast<const mystd::array<uint8_t, 2> *>(pt), game);
+void gameOfLifeHoldDead(Game &game) {
+    return gameOfLife<false>(game);
 }
 
-// Self-register
+void gameOfLifeSettings(SDL_Renderer* renderer, TTF_Font* font, int screenWidth, int screenHeight) {
+    mystd::array<uint8_t, 2> tempRules = currentRules;
+
+    const int buttonSize = 40;
+    const int buttonSpacing = 5;
+    const int rowSpacing = 60;
+
+    int totalWidth = 8 * buttonSize + 7 * buttonSpacing;
+    int startX = (screenWidth - totalWidth) / 2;
+    int row1Y = screenHeight / 2 - rowSpacing;
+    int row2Y = screenHeight / 2 + rowSpacing;
+
+    const int okButtonWidth = 100;
+    const int okButtonHeight = 50;
+    int okButtonX = (screenWidth - okButtonWidth) / 2;
+    int okButtonY = row2Y + rowSpacing * 2;
+    
+    bool settingsRunning = true;
+    bool redrawNeeded = true;
+    
+    while (settingsRunning) {
+        SDL_Event event;
+        while (SDL_PollEvent(&event)) {
+            if (event.type == SDL_QUIT) {
+                settingsRunning = false;
+                break;
+            } else if (event.type == SDL_KEYDOWN) {
+                if (event.key.keysym.sym == SDLK_RETURN || 
+                    event.key.keysym.sym == SDLK_ESCAPE) {
+                    currentRules = tempRules;
+                    settingsRunning = false;
+                }
+            } else if (event.type == SDL_MOUSEBUTTONDOWN) {
+                if (event.button.button == SDL_BUTTON_LEFT) {
+                    int mouseX = event.button.x;
+                    int mouseY = event.button.y;
+
+                    for (int i = 0; i < 9; ++i) {
+                        int buttonX = startX + i * (buttonSize + buttonSpacing);
+                        SDL_Rect buttonRect = {buttonX, row1Y, buttonSize, buttonSize};
+                        
+                        if (mouseX >= buttonRect.x && 
+                            mouseX <= buttonRect.x + buttonRect.w &&
+                            mouseY >= buttonRect.y && 
+                            mouseY <= buttonRect.y + buttonRect.h) {
+                            tempRules[0] ^= (1 << i);
+                            redrawNeeded = true;
+                        }
+                    }
+
+                    for (int i = 0; i < 9; ++i) {
+                        int buttonX = startX + i * (buttonSize + buttonSpacing);
+                        SDL_Rect buttonRect = {buttonX, row2Y, buttonSize, buttonSize};
+                        
+                        if (mouseX >= buttonRect.x && 
+                            mouseX <= buttonRect.x + buttonRect.w &&
+                            mouseY >= buttonRect.y && 
+                            mouseY <= buttonRect.y + buttonRect.h) {
+                            tempRules[1] ^= (1 << i);
+                            redrawNeeded = true;
+                        }
+                    }
+
+                    SDL_Rect okRect = {okButtonX, okButtonY, okButtonWidth, okButtonHeight};
+                    if (mouseX >= okRect.x && 
+                        mouseX <= okRect.x + okRect.w &&
+                        mouseY >= okRect.y && 
+                        mouseY <= okRect.y + okRect.h) {
+                        currentRules = tempRules;
+                        settingsRunning = false;
+                    }
+                }
+            }
+        }
+        
+        if (redrawNeeded) {
+            SDL_SetRenderDrawColor(renderer, 30, 30, 40, 255);
+            SDL_RenderClear(renderer);
+
+            if (font) {
+                SDL_Color textColor = {255, 255, 255, 255};
+                std::string surviveText = "Survive with neighbors:";
+                std::string reviveText = "Revive with neighbors:";
+            }
+
+            for (int i = 0; i < 9; ++i) {
+                int buttonX = startX + i * (buttonSize + buttonSpacing);
+                SDL_Rect buttonRect = {buttonX, row1Y, buttonSize, buttonSize};
+
+                bool enabled = (tempRules[0] >> i) & 0b1;
+                
+                if (enabled) {
+                    SDL_SetRenderDrawColor(renderer, 100, 200, 100, 255);
+                } else {
+                    SDL_SetRenderDrawColor(renderer, 200, 100, 100, 255);
+                }
+                SDL_RenderFillRect(renderer, &buttonRect);
+
+                SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
+                SDL_RenderDrawRect(renderer, &buttonRect);
+            }
+
+            for (int i = 0; i < 9; ++i) {
+                int buttonX = startX + i * (buttonSize + buttonSpacing);
+                SDL_Rect buttonRect = {buttonX, row2Y, buttonSize, buttonSize};
+                bool enabled = (tempRules[1] >> i) & 0b1;
+                
+                if (enabled) {
+                    SDL_SetRenderDrawColor(renderer, 100, 200, 100, 255);
+                } else {
+                    SDL_SetRenderDrawColor(renderer, 200, 100, 100, 255);
+                }
+                SDL_RenderFillRect(renderer, &buttonRect);
+
+                SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
+                SDL_RenderDrawRect(renderer, &buttonRect);
+            }
+
+            SDL_Rect okRect = {okButtonX, okButtonY, okButtonWidth, okButtonHeight};
+            SDL_SetRenderDrawColor(renderer, 100, 150, 255, 255);
+            SDL_RenderFillRect(renderer, &okRect);
+            SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
+            SDL_RenderDrawRect(renderer, &okRect);
+            SDL_RenderPresent(renderer);
+            redrawNeeded = false;
+        }
+        
+        SDL_Delay(1);
+    }
+}
+
+}
+
+// Self-register with settings function
 namespace {
 const bool registered = [] {
-  mods::registerMod("Game of Life (hold notes counted as alive cell, before "
-                    "new fragments load)",
-                    &gameOfLifeHoldAlive, nullptr);
-  mods::registerMod("Game of Life (hold notes counted as alive cell, after new "
-                    "fragments load)",
-                    nullptr, &gameOfLifeHoldAlive);
-  mods::registerMod("Game of Life (hold notes counted as dead cell, before new "
-                    "fragments load)",
-                    &gameOfLifeHoldDead, nullptr);
-  mods::registerMod("Game of Life (hold notes counted as dead cell, after new "
-                    "fragments load)",
-                    nullptr, &gameOfLifeHoldDead);
-  return true;
+    registerMod("Game of Life (hold notes counted as alive cell, before "
+                "new fragments load)",
+                [](Game& game) { gameOfLife::gameOfLifeHoldAlive(game); },
+                nullptr,
+                gameOfLife::gameOfLifeSettings);
+    
+    registerMod("Game of Life (hold notes counted as alive cell, after new "
+                "fragments load)",
+                nullptr,
+                [](Game& game) { gameOfLife::gameOfLifeHoldAlive(game); },
+                gameOfLife::gameOfLifeSettings);
+    
+    registerMod("Game of Life (hold notes counted as dead cell, before new "
+                "fragments load)",
+                [](Game& game) { gameOfLife::gameOfLifeHoldDead(game); },
+                nullptr,
+                gameOfLife::gameOfLifeSettings);
+    
+    registerMod("Game of Life (hold notes counted as dead cell, after new "
+                "fragments load)",
+                nullptr,
+                [](Game& game) { gameOfLife::gameOfLifeHoldDead(game); },
+                gameOfLife::gameOfLifeSettings);
+    
+    return true;
 }();
 } // namespace
