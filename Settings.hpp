@@ -6,6 +6,7 @@
 
 #include <include/vector.hpp>
 
+#include "Renderer.hpp"
 #include "generate-notes.hpp"
 #include <Mods.hpp>
 
@@ -21,16 +22,44 @@ extern std::string MOD;
 extern Game *game;
 extern Renderer *gameRenderer;
 
-void renderText(SDL_Renderer *renderer, TTF_Font *font, const std::string &text,
-                int x, int y, SDL_Color color) {
-  SDL_Surface *surf = TTF_RenderText_Blended(font, text.c_str(), color);
-  SDL_Texture *tex = SDL_CreateTextureFromSurface(renderer, surf);
-  SDL_FreeSurface(surf);
+void renderText(SDL_Renderer *rnd, TTF_Font *font, const std::string &text,
+                int x, int y, SDL_Color color, Alignment align = ALIGN_CENTER) {
+  if (text.empty())
+    return;
+  SDL_Surface *textSurface = TTF_RenderText_Blended(font, text.c_str(), color);
+  if (!textSurface) {
+    std::cerr << "TTF_RenderText error: " << TTF_GetError() << std::endl;
+    return;
+  }
 
-  SDL_Rect dst = {x, y, 0, 0};
-  SDL_QueryTexture(tex, nullptr, nullptr, &dst.w, &dst.h);
-  SDL_RenderCopy(renderer, tex, nullptr, &dst);
-  SDL_DestroyTexture(tex);
+  SDL_Texture *textTexture = SDL_CreateTextureFromSurface(rnd, textSurface);
+  SDL_FreeSurface(textSurface);
+
+  if (!textTexture)
+    return;
+
+  int textWidth, textHeight;
+  SDL_QueryTexture(textTexture, nullptr, nullptr, &textWidth, &textHeight);
+
+  SDL_Rect destRect;
+  destRect.y = y - textHeight / 2;
+
+  switch (align) {
+  case ALIGN_LEFT:
+    destRect.x = x;
+    break;
+  case ALIGN_CENTER:
+    destRect.x = x - textWidth / 2;
+    break;
+  case ALIGN_RIGHT:
+    destRect.x = x - textWidth;
+    break;
+  }
+
+  destRect.w = textWidth;
+  destRect.h = textHeight;
+
+  SDL_RenderCopy(rnd, textTexture, nullptr, &destRect);
 }
 
 void renderRoundedRect(SDL_Renderer *renderer, SDL_Rect rect, int radius,
@@ -67,12 +96,12 @@ void showSettings(SDL_Renderer *renderer) {
   SDL_Color grey = {100, 100, 100, 255};
   SDL_Color blue = {0, 128, 255, 255};
 
-  SDL_Rect lanesMinus = {300, 100, 40, 40};
-  SDL_Rect lanesPlus = {400, 100, 40, 40};
-  SDL_Rect fragmentsMinus = {300, 160, 40, 40};
-  SDL_Rect fragmentsPlus = {400, 160, 40, 40};
-  SDL_Rect modDropdown = {300, 220, 200, 40};
-  SDL_Rect okButton = {SCREEN_WIDTH / 2 - 50, 300, 100, 50};
+  SDL_Rect lanesMinus = {310, 80, 40, 40};
+  SDL_Rect lanesPlus = {410, 80, 40, 40};
+  SDL_Rect fragmentsMinus = {310, 140, 40, 40};
+  SDL_Rect fragmentsPlus = {410, 140, 40, 40};
+  SDL_Rect modDropdown = {310, 200, 200, 40};
+  SDL_Rect okButton = {SCREEN_WIDTH / 2 - 50, 280, 100, 50};
 
   std::vector<std::string> modKeys;
   for (auto &p : getModMap())
@@ -123,14 +152,14 @@ void showSettings(SDL_Renderer *renderer) {
     SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
     SDL_RenderClear(renderer);
 
-    renderText(renderer, medium_font, "LANES:", 50, 110, white);
-    renderText(renderer, medium_font, "FRAGMENTS:", 50, 170, white);
-    renderText(renderer, medium_font, "MOD:", 50, 230, white);
+    renderText(renderer, medium_font, "LANES:", 50, 100, white, ALIGN_LEFT);
+    renderText(renderer, medium_font, "FRAGMENTS:", 50, 160, white, ALIGN_LEFT);
+    renderText(renderer, medium_font, "MOD:", 50, 220, white, ALIGN_LEFT);
 
-    renderText(renderer, medium_font, std::to_string(LANES), 350, 110, white);
-    renderText(renderer, medium_font, std::to_string(FRAGMENTS), 350, 170,
+    renderText(renderer, medium_font, std::to_string(LANES), 380, 105, white);
+    renderText(renderer, medium_font, std::to_string(FRAGMENTS), 380, 165,
                white);
-    renderText(renderer, medium_font, MOD, 310, 230, white);
+    renderText(renderer, medium_font, MOD, 310, 220, white, ALIGN_LEFT);
 
     renderRoundedRect(renderer, lanesMinus, 10, blue);
     renderRoundedRect(renderer, lanesPlus, 10, blue);
@@ -139,26 +168,22 @@ void showSettings(SDL_Renderer *renderer) {
     renderRoundedRect(renderer, modDropdown, 10, grey);
     renderRoundedRect(renderer, okButton, 15, blue);
 
-    renderText(renderer, medium_font, "-", lanesMinus.x + 12, lanesMinus.y + 5,
+    renderText(renderer, medium_font, "-", lanesMinus.x + 20, lanesMinus.y + 20,
                white);
-    renderText(renderer, medium_font, "+", lanesPlus.x + 12, lanesPlus.y + 5,
+    renderText(renderer, medium_font, "+", lanesPlus.x + 20, lanesPlus.y + 20,
                white);
-    renderText(renderer, medium_font, "-", fragmentsMinus.x + 12,
-               fragmentsMinus.y + 5, white);
-    renderText(renderer, medium_font, "+", fragmentsPlus.x + 12,
-               fragmentsPlus.y + 5, white);
-    renderText(renderer, medium_font, "OK", okButton.x + 20, okButton.y + 10,
-               white);
-    renderText(renderer, medium_font, "(Select mods)", modDropdown.x,
-               modDropdown.y, white);
+    renderText(renderer, medium_font, "-", fragmentsMinus.x + 20,
+               fragmentsMinus.y + 20, white);
+    renderText(renderer, medium_font, "+", fragmentsPlus.x + 20,
+               fragmentsPlus.y + 20, white);
+    renderText(renderer, medium_font, "OK", okButton.x + 49, okButton.y + 27, white);
 
     if (dropdownOpen) {
       for (int i = 0; i < (int)modKeys.size(); ++i) {
         SDL_Rect itemRect = {modDropdown.x, modDropdown.y + 40 * (i + 1),
                              modDropdown.w, 40};
-        renderRoundedRect(renderer, itemRect, 5, grey);
         renderText(renderer, small_font, modKeys[i], itemRect.x + 10,
-                   itemRect.y + 5, white);
+                   itemRect.y, white, ALIGN_LEFT);
       }
     }
 
@@ -175,4 +200,3 @@ void showSettings(SDL_Renderer *renderer) {
     modSettingsFunc(renderer, small_font, SCREEN_WIDTH, SCREEN_HEIGHT);
   }
 }
-

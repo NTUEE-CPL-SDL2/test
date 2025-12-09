@@ -64,8 +64,8 @@ void gameOfLifeHoldAlive(Game &game) { return gameOfLife<true>(game); }
 
 void gameOfLifeHoldDead(Game &game) { return gameOfLife<false>(game); }
 
-void drawText(SDL_Renderer *rnd, const std::string &text, int x, int y,
-              TTF_Font *font, SDL_Color color, Alignment align = ALIGN_LEFT) {
+void renderText(SDL_Renderer *rnd, const std::string &text, int x, int y,
+                TTF_Font *font, SDL_Color color, Alignment align = ALIGN_LEFT) {
   if (text.empty())
     return;
   SDL_Surface *textSurface = TTF_RenderText_Blended(font, text.c_str(), color);
@@ -196,8 +196,8 @@ void gameOfLifeSettings(SDL_Renderer *renderer, TTF_Font *font, int screenWidth,
         SDL_RenderDrawRect(renderer, &buttonRect);
 
         SDL_Color numColor = {255, 255, 255, 255};
-        drawText(renderer, std::to_string(i), buttonX + buttonSize / 2,
-                 row1Y + buttonSize / 2, font, numColor, ALIGN_CENTER);
+        renderText(renderer, std::to_string(i), buttonX + buttonSize / 2,
+                   row1Y + buttonSize / 2, font, numColor, ALIGN_CENTER);
       }
 
       for (int i = 0; i < 9; ++i) {
@@ -216,8 +216,8 @@ void gameOfLifeSettings(SDL_Renderer *renderer, TTF_Font *font, int screenWidth,
         SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
         SDL_RenderDrawRect(renderer, &buttonRect);
         SDL_Color numColor = {255, 255, 255, 255};
-        drawText(renderer, std::to_string(i), buttonX + buttonSize / 2,
-                 row2Y + buttonSize / 2, font, numColor, ALIGN_CENTER);
+        renderText(renderer, std::to_string(i), buttonX + buttonSize / 2,
+                   row2Y + buttonSize / 2, font, numColor, ALIGN_CENTER);
       }
 
       SDL_Rect okRect = {okButtonX, okButtonY, okButtonWidth, okButtonHeight};
@@ -232,19 +232,19 @@ void gameOfLifeSettings(SDL_Renderer *renderer, TTF_Font *font, int screenWidth,
 
       int surviveTextX = screenWidth / 2;
       int surviveTextY = row1Y - 40;
-      drawText(renderer, surviveText, surviveTextX, surviveTextY, font,
-               textColor, ALIGN_CENTER);
+      renderText(renderer, surviveText, surviveTextX, surviveTextY, font,
+                 textColor, ALIGN_CENTER);
 
       int reviveTextX = screenWidth / 2;
       int reviveTextY = row2Y - 40;
-      drawText(renderer, reviveText, reviveTextX, reviveTextY, font, textColor,
-               ALIGN_CENTER);
+      renderText(renderer, reviveText, reviveTextX, reviveTextY, font,
+                 textColor, ALIGN_CENTER);
 
       std::string okText = "OK";
       int okTextX = okButtonX + okButtonWidth / 2;
       int okTextY = okButtonY + okButtonHeight / 2;
-      drawText(renderer, okText, okTextX, okTextY, font, textColor,
-               ALIGN_CENTER);
+      renderText(renderer, okText, okTextX, okTextY, font, textColor,
+                 ALIGN_CENTER);
 
       SDL_RenderPresent(renderer);
       redrawNeeded = false;

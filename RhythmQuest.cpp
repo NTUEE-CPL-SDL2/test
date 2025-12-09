@@ -118,12 +118,12 @@ void showCountdown(SDL_Renderer *renderer) {
   Uint32 lastTick = SDL_GetTicks();
   bool showGo = false;
 
-  bool running = true;
-  while (running) {
+  while (true) {
     SDL_Event e;
     while (SDL_PollEvent(&e)) {
       if (e.type == SDL_QUIT) {
         running = false;
+        return;
       }
     }
 
