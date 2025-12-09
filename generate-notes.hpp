@@ -1,22 +1,27 @@
 #include <cstdint>
 #include <cstdlib>
 #include <ctime>
-#include <vector>
+
+#include "include/qsort.hpp"
+#include "include/vector.hpp"
 
 #include "Game.hpp"
 
 mystd::vector<NoteData> generateRandomNotes(std::size_t lanes,
                                             std::size_t fragments,
                                             unsigned int numNotes,
-                                            int tapPercent = 70) {
+                                            unsigned int tapPercent = 70) {
   mystd::vector<NoteData> notes;
+
+  if (lanes == 0 || fragments == 0 || numNotes == 0) {
+    return notes;
+  }
+
   std::srand((unsigned)std::time(nullptr));
 
   for (unsigned int i = 0; i < numNotes; ++i) {
     NoteData n;
     n.lane = std::rand() % lanes;
-
-    // startFragment between 0 and fragments*5
     n.startFragment = std::rand() % (fragments * 5);
 
     if (std::rand() % 100 < tapPercent) {
@@ -27,11 +32,9 @@ mystd::vector<NoteData> generateRandomNotes(std::size_t lanes,
     notes.push_back(n);
   }
 
-  // sort by startFragment
-  std::sort(notes.begin(), notes.end(),
-            [](const NoteData &a, const NoteData &b) {
-              return a.startFragment < b.startFragment;
-            });
+  qsort(notes.begin(), notes.end(), [](const NoteData &a, const NoteData &b) {
+    return a.startFragment < b.startFragment;
+  });
 
   return notes;
 }

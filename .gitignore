@@ -1,14 +1,7 @@
-# ignore binaries
-*.exe
-*.dll
-*.obj
 *.o
-
-# ignore VSCode etc.
-.vscode/
-.idea/
-
-# ignore build folders
+*.out
+*.exe
+*.swp
+*.dll
+SDL*
 build/
-bin/
-out/

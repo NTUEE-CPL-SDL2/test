@@ -36,8 +36,9 @@ const uint32_t COMBO = 1u;
 const uint32_t SCORE = 2u;
 
 struct Effect {
+  uint32_t endTime;
   uint32_t content;
-  uint64_t endTime;
+  uint32_t num;
 };
 
 bool operator<(Effect lhs, Effect rhs) { return lhs.endTime > rhs.endTime; }
@@ -47,7 +48,7 @@ public:
   mystd::vector<NoteData> notes; // sorted by startFragment
   std::size_t lanes;
   std::size_t fragments;    // visible fragments
-  uint64_t msPerFragment;   // ms per fragment
+  uint32_t msPerFragment;   // ms per fragment
   std::size_t loadNext = 0; // next note index to load
 
   mystd::vector<mystd::circulate<int8_t, mystd::vector<int8_t>>> highway;
@@ -56,7 +57,7 @@ public:
   mystd::vector<bool> lanePressed;
 
   // Hold sustain timing
-  mystd::vector<uint64_t> holdPressedTime;
+  mystd::vector<uint32_t> holdPressedTime;
 
   // Scoring, hold not counted for perfect to miss and combo
   uint32_t score = 0, perfectCount = 0, greatCount = 0, goodCount = 0,
@@ -68,7 +69,7 @@ public:
   game_priority_queue<Effect> centerEffects = game_priority_queue<Effect>();
 
 public:
-  Game(std::size_t lanes_, std::size_t fragments_, uint64_t mpf)
+  Game(std::size_t lanes_, std::size_t fragments_, uint32_t mpf)
       : lanes(lanes_), fragments(fragments_), msPerFragment(mpf) {
     highway.reserve(lanes);
     for (uint8_t i = 0; i < lanes; ++i) {
@@ -80,16 +81,17 @@ public:
     laneEffects.assign(lanes, {NO_LANE_EFFECT, 0});
   }
 
-  inline void addCombo(uint64_t nowMs) {
+  inline void addCombo(uint32_t nowMs) {
     combo++;
     maxCombo = std::max(maxCombo, combo);
     if (combo > 1)
-      centerEffects.push({COMBO, nowMs + msPerFragment * fragments});
+      centerEffects.push(
+          {nowMs + msPerFragment * (uint32_t)fragments * 3, COMBO, combo});
   }
 
   inline void resetCombo() { combo = 0; }
 
-  inline void clearExpiredEffects(uint64_t nowMs) {
+  inline void clearExpiredEffects(uint32_t nowMs) {
     for (auto &i : laneEffects)
       if (i.endTime <= nowMs)
         i = {NO_LANE_EFFECT, 0};
@@ -99,7 +101,7 @@ public:
     }
   }
 
-  void addTapScore(uint64_t nowMs, std::size_t lane) {
+  void addTapScore(uint32_t nowMs, std::size_t lane) {
     double f =
         (double)(nowMs - nowFragment * msPerFragment) / double(msPerFragment);
 
@@ -134,11 +136,12 @@ public:
     laneEffects[lane].endTime = nowMs + msPerFragment * fragments;
 
     if ((score / 1000 - prev) > 0)
-      centerEffects.push({SCORE, nowMs + msPerFragment * fragments});
+      centerEffects.push(
+          {nowMs + msPerFragment * (uint32_t)fragments * 3, SCORE, score});
   }
 
-  void addHoldScore(uint64_t nowMs, std::size_t lane) {
-    uint64_t heldMs = nowMs - holdPressedTime[lane];
+  void addHoldScore(uint32_t nowMs, std::size_t lane) {
+    uint32_t heldMs = nowMs - holdPressedTime[lane];
     heldTime += heldMs;
     double f = (double)heldMs * 400.0f / double(msPerFragment);
     laneEffects[lane].content &= CLEAR;
@@ -147,18 +150,19 @@ public:
     uint32_t prev = score / 1000;
     score += static_cast<uint32_t>(f);
     if ((score / 1000 - prev) > 0) {
-      centerEffects.push({SCORE, nowMs + msPerFragment * fragments});
+      centerEffects.push(
+          {nowMs + msPerFragment * (uint32_t)fragments * 3, SCORE, score});
       std::cout << "a";
     }
   }
 
   // Called every msPerFragment ms
   void loadFragment(std::function<void(Game &)> foo = nullptr,
-                    bool before = true) {
+                    std::function<void(Game &)> bar = nullptr) {
     // 1. Process bottom fragments (misses + hold sustain end)
     for (std::size_t lane = 0; lane < lanes; ++lane) {
       int8_t &bottom = highway[lane].back();
-      uint64_t nowMs = (nowFragment + 1) * msPerFragment;
+      uint32_t nowMs = (nowFragment + 1) * msPerFragment;
       if (bottom < 0) { // tap
         missCount++;
         laneEffects[lane].content &= CLEAR;
@@ -175,7 +179,7 @@ public:
       }
     }
 
-    if (before && foo)
+    if (foo)
       foo(*this);
 
     // 2. Rotate all lanes
@@ -198,11 +202,11 @@ public:
     }
     nowFragment++;
 
-    if (!before && foo)
-      foo(*this);
+    if (bar)
+      bar(*this);
   }
 
-  void keyPressed(std::size_t lane, uint64_t nowMs) {
+  void keyPressed(std::size_t lane, uint32_t nowMs) {
     lanePressed[lane] = true;
     int8_t &bottom = highway[lane].back();
 
@@ -215,7 +219,7 @@ public:
     }
   }
 
-  void keyReleased(std::size_t lane, uint64_t nowMs) {
+  void keyReleased(std::size_t lane, uint32_t nowMs) {
     lanePressed[lane] = false;
     int8_t &bottom = highway[lane].back();
 

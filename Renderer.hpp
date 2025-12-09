@@ -14,11 +14,13 @@
 
 #include "Game.hpp"
 
+enum Alignment : uint8_t { ALIGN_LEFT, ALIGN_CENTER, ALIGN_RIGHT };
+
 struct NotesCacheHash {
-  std::size_t operator()(const mystd::tuple<int8_t, bool, uint64_t> &t) const {
+  std::size_t operator()(const mystd::tuple<int8_t, bool, uint32_t> &t) const {
     auto hash1 = std::hash<int8_t>{}(mystd::get<0>(t));
     auto hash2 = std::hash<bool>{}(mystd::get<1>(t));
-    auto hash3 = std::hash<uint64_t>{}(mystd::get<2>(t));
+    auto hash3 = std::hash<uint32_t>{}(mystd::get<2>(t));
     return hash1 ^ (hash2 << 1) ^ (hash3 << 2);
   }
 };
@@ -26,7 +28,7 @@ struct NotesCacheHash {
 class Renderer {
 private:
   Game &game;
-  std::unordered_map<mystd::tuple<int8_t, bool, uint64_t>, SDL_Texture *,
+  std::unordered_map<mystd::tuple<int8_t, bool, uint32_t>, SDL_Texture *,
                      NotesCacheHash>
       notesTextureCache;
   std::unordered_map<std::string, SDL_Texture *> textTextureCache;
@@ -42,8 +44,6 @@ private:
   TTF_Font *small_font;
 
   SDL_Renderer *sdl_renderer;
-
-  enum Alignment : uint8_t { ALIGN_LEFT, ALIGN_CENTER, ALIGN_RIGHT };
 
 public:
   float fps;
@@ -61,8 +61,8 @@ public:
 
   ~Renderer() { clearCache(); }
 
-  void render(SDL_Renderer *rnd) {
-    SDL_SetRenderDrawColor(rnd, 0, 0, 0, 255);
+  void render(SDL_Renderer *rnd, uint32_t offsetMs) {
+    SDL_SetRenderDrawColor(rnd, 80, 80, 180, 80);
     SDL_RenderClear(rnd);
 
     // Draw game field
@@ -78,11 +78,6 @@ public:
       SDL_RenderDrawLine(rnd, 0, y, screenW, y);
     }
 
-    SDL_SetRenderDrawColor(rnd, 255, 255, 255, 255);
-    int judgmentLineY = screenH - fragmentHeight;
-    SDL_Rect judgmentLine = {0, judgmentLineY, screenW, 3};
-    SDL_RenderFillRect(rnd, &judgmentLine);
-
     // Render notes
     for (std::size_t lane = 0; lane < game.lanes; ++lane) {
       bool lanePressed = game.lanePressed[lane];
@@ -90,7 +85,7 @@ public:
       for (std::size_t fragmentIdx = 0; fragmentIdx < game.fragments;
            ++fragmentIdx) {
         int8_t fragmentValue = game.highway[lane][fragmentIdx];
-        uint64_t holdTime = 0;
+        uint32_t holdTime = 0;
 
         if (fragmentIdx == game.fragments - 1 && fragmentValue > 0 &&
             lanePressed) {
@@ -115,7 +110,13 @@ public:
 
         SDL_Rect destRect;
         destRect.x = lane * laneWidth;
-        destRect.y = fragmentIdx * fragmentHeight;
+        double progress = (double)offsetMs / (double)game.msPerFragment;
+        if (progress > 1.0)
+          progress = 1.0;
+        double smoothY = (fragmentIdx + progress) * fragmentHeight;
+
+        destRect.y = (int)smoothY;
+
         destRect.w = laneWidth;
         destRect.h = fragmentHeight;
 
@@ -161,6 +162,12 @@ public:
                {200, 200, 200, 255}, ALIGN_CENTER);
     }
 
+    // Draw judgement line
+    SDL_SetRenderDrawColor(rnd, 255, 255, 255, 255);
+    int judgmentLineY = screenH - fragmentHeight;
+    SDL_Rect judgmentLine = {0, judgmentLineY, screenW, 3};
+    SDL_RenderFillRect(rnd, &judgmentLine);
+
     // Draw score at top center
     drawText(rnd, "Score: " + std::to_string(game.score), screenW / 2, 30,
              medium_font, {255, 255, 255, 255}, ALIGN_CENTER);
@@ -203,7 +210,8 @@ public:
 
     // Draw center effects
     for (std::size_t i = 0; i < game.centerEffects.size(); ++i) {
-      drawCenterEffect(rnd, game.centerEffects.c[i].content);
+      drawCenterEffect(rnd, game.centerEffects.c[i].content,
+                       game.centerEffects.c[i].num);
     }
   }
 
@@ -367,7 +375,7 @@ private:
              small_font, textColor, ALIGN_CENTER);
   }
 
-  void drawCenterEffect(SDL_Renderer *rnd, uint32_t effect) {
+  void drawCenterEffect(SDL_Renderer *rnd, uint32_t effect, uint32_t num) {
     if (effect & COMBO) {
       std::string imagePath = "res/img/combo.png";
       std::string comboText = std::to_string(game.combo);
@@ -405,7 +413,7 @@ private:
 
         drawText(rnd, comboText, screenW / 2, screenH / 3, large_font,
                  comboColor, ALIGN_CENTER);
-        drawText(rnd, "COMBO: " + std::to_string(game.combo), screenW / 2,
+        drawText(rnd, "COMBO: " + std::to_string(num), screenW / 2,
                  screenH / 3 + 80, medium_font, comboColor, ALIGN_CENTER);
       }
     }
@@ -435,14 +443,14 @@ private:
 
         SDL_RenderCopy(rnd, imageTexture, nullptr, &destRect);
 
-        drawText(rnd, "SCORE: " + std::to_string(game.score), screenW / 2, 150,
+        drawText(rnd, "SCORE: " + std::to_string(num), screenW / 2, 150,
                  medium_font, {100, 255, 100, 255}, ALIGN_CENTER);
       }
     }
   }
 
   SDL_Texture *createFragmentTexture(SDL_Renderer *rnd, int8_t fragmentValue,
-                                     bool pressed, uint64_t holdPressedTime) {
+                                     bool pressed, uint32_t holdPressedTime) {
     SDL_Texture *texture =
         SDL_CreateTexture(rnd, SDL_PIXELFORMAT_RGBA8888,
                           SDL_TEXTUREACCESS_TARGET, laneWidth, fragmentHeight);
@@ -465,30 +473,17 @@ private:
         color = {100, 255, 100, 200};
       }
     } else {
-      if (pressed) {
-        color = {50, 50, 200, 120};
-      } else {
-        color = {80, 80, 180, 80};
-      }
+      color = {80, 80, 180, 80};
     }
 
     SDL_SetRenderDrawColor(rnd, color.r, color.g, color.b, color.a);
     SDL_Rect fillRect = {1, 1, laneWidth - 2, fragmentHeight - 2};
     SDL_RenderFillRect(rnd, &fillRect);
 
-    if (fragmentValue >= -1) {
-      SDL_Color borderColor = fragmentValue < 0 ? SDL_Color{255, 200, 200, 255}
-                                                : SDL_Color{200, 255, 200, 255};
-
-      SDL_SetRenderDrawColor(rnd, borderColor.r, borderColor.g, borderColor.b,
-                             borderColor.a);
-      SDL_RenderDrawRect(rnd, &fillRect);
-
-      if (fragmentValue > 0) {
-        std::string holdText = std::to_string(fragmentValue);
-        drawText(rnd, holdText, laneWidth / 2, fragmentHeight / 2, small_font,
-                 {255, 255, 255, 255}, ALIGN_CENTER);
-      }
+    if (fragmentValue > 0) {
+      std::string holdText = std::to_string(fragmentValue);
+      drawText(rnd, holdText, laneWidth / 2, fragmentHeight / 2, small_font,
+               {255, 255, 255, 255}, ALIGN_CENTER);
     }
 
     SDL_SetRenderTarget(rnd, prevTarget);
