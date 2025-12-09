@@ -6,13 +6,14 @@
 #include <SDL2/SDL_image.h>
 #include <SDL2/SDL_ttf.h>
 #include <cstddef>
+#include <cstdint>
 #include <functional>
 #include <iostream>
 
 #include "Game.hpp"
 #include "Mods.hpp"
 #include "Renderer.hpp"
-#include "generate-notes.hpp"
+#include "Settings.hpp"
 #include "mods/GameOfLife.hpp"
 
 
@@ -20,9 +21,9 @@ TTF_Font *large_font, *medium_font, *small_font;
 int SCREEN_WIDTH = 1024;
 int SCREEN_HEIGHT = 768;
 
-std::size_t LANES;
-std::size_t FRAGMENTS;
-uint64_t MS_PER_FRAGMENT;
+std::size_t LANES = 4;
+std::size_t FRAGMENTS = 10;
+uint64_t MS_PER_FRAGMENT = 100;
 std::string MOD;
 SettingsFunc modSettingsFunc;
 
@@ -31,45 +32,133 @@ Renderer* gameRenderer = static_cast<Renderer*>(::operator new(sizeof(Renderer))
 
 enum class GameState { SETTINGS, COUNTDOWN, GAME, PAUSE };
 
-void showSettings(SDL_Renderer *renderer) {
-  std::cout << "=== Settings Menu ===" << std::endl;
-  std::cout << "1. Set LANE and FRAGMENTS" << std::endl;
-  std::cout << "2. Set MOD. If use MOD, call mod settings, after it back to this settings" << std::endl;
-  std::cout << "3. Exit Game button" << std::endl;
-  std::cout << "4. OK button" << std::endl;
-
-  LANES = 9;
-  FRAGMENTS = 10;
-  MS_PER_FRAGMENT = 100;
-  if (!getModMap().empty()) MOD = getModMap().begin()->first;
-  modSettingsFunc = mystd::get<2>(getModMap()[MOD]);
-  new (game) Game(LANES, FRAGMENTS, MS_PER_FRAGMENT);
-  game->notes = generateRandomNotes(LANES, 500, 500, 70);
-  new (gameRenderer) Renderer(*game, SCREEN_WIDTH, SCREEN_HEIGHT, renderer, large_font,
-                        medium_font, small_font);
-
-  if (modSettingsFunc) {
-    modSettingsFunc(renderer, small_font, SCREEN_WIDTH, SCREEN_HEIGHT);
-  }
-
-  std::cout << "Settings loaded. Entering game..." << std::endl;
-}
-
-void showCountdown(SDL_Renderer *renderer) {
-    // use large font
-  std::cout << "Starting countdown..." << std::endl;
-  for (int i = 3; i > 0; --i) {
-    std::cout << i << "..." << std::endl;
-    SDL_Delay(1000);
-  }
-  std::cout << "GO!" << std::endl; // show res/img/GO.png and render GO! on it
-}
+GameState currentState;
+bool running = true;
 
 void showPauseMenu(SDL_Renderer *renderer) {
-  std::cout << "=== Pause Menu ===" << std::endl;
-  std::cout << "1. Resume" << std::endl;
-  std::cout << "2. New Game" << std::endl;
-  std::cout << "3. Exit Game Button" << std::endl;
+    bool running = true;
+    SDL_Event e;
+
+    SDL_Color white = {255,255,255,255};
+    SDL_Color blue  = {0,128,255,255};
+    SDL_Color dark  = {20,20,20,200};
+
+    SDL_Rect resumeButton = { SCREEN_WIDTH/2 - 100, 150, 200, 60 };
+    SDL_Rect newGameButton = { SCREEN_WIDTH/2 - 100, 230, 200, 60 };
+    SDL_Rect exitButton = { SCREEN_WIDTH/2 - 100, 310, 200, 60 };
+
+    int choice = 0;   // 1=resume, 2=newgame, 3=exit
+
+    while (running) {
+        while (SDL_PollEvent(&e)) {
+            if (e.type == SDL_QUIT) return;
+
+            if (e.type == SDL_MOUSEBUTTONDOWN && e.button.button == SDL_BUTTON_LEFT) {
+                int mx = e.button.x, my = e.button.y;
+                if (pointInRect(mx,my,resumeButton)) { choice = 1; running=false; }
+                else if (pointInRect(mx,my,newGameButton)) { choice = 2; running=false; }
+                else if (pointInRect(mx,my,exitButton)) { choice = 3; running=false; }
+            }
+        }
+
+        SDL_SetRenderDrawColor(renderer, dark.r, dark.g, dark.b, dark.a);
+        SDL_RenderFillRect(renderer, nullptr);
+
+        renderText(renderer, large_font, "Paused", SCREEN_WIDTH/2 - 80, 60, white);
+
+        renderRoundedRect(renderer, resumeButton, 15, blue);
+        renderRoundedRect(renderer, newGameButton, 15, blue);
+        renderRoundedRect(renderer, exitButton, 15, blue);
+
+        renderText(renderer, medium_font, "Resume", resumeButton.x + 45, resumeButton.y + 15, white);
+        renderText(renderer, medium_font, "New Game", newGameButton.x + 35, newGameButton.y + 15, white);
+        renderText(renderer, medium_font, "Exit Game", exitButton.x + 45, exitButton.y + 15, white);
+
+        SDL_RenderPresent(renderer);
+        SDL_Delay(16);
+    }
+
+    if (choice == 1) {
+        return;
+    }
+    else if (choice == 2) {
+        currentState = GameState::SETTINGS;
+    }
+    else if (choice == 3) {
+       running = false; 
+    }
+}
+
+void showCountdown(SDL_Renderer* renderer) {
+    SDL_Color white = {255, 255, 255, 255};
+
+    SDL_Surface* goSurface = IMG_Load("res/img/GO.png");
+    if (!goSurface) {
+        std::cerr << "IMG_Load Error: " << IMG_GetError() << std::endl;
+        return;
+    }
+    SDL_Texture* goTexture = SDL_CreateTextureFromSurface(renderer, goSurface);
+    SDL_FreeSurface(goSurface);
+
+    int goW, goH;
+    SDL_QueryTexture(goTexture, nullptr, nullptr, &goW, &goH);
+
+    SDL_Rect goRect = {
+        (SCREEN_WIDTH - goW) / 2,
+        (SCREEN_HEIGHT - goH) / 2 - 40,
+        goW,
+        goH
+    };
+
+    for (int i = 3; i > 0; --i) {
+        Uint32 start = SDL_GetTicks();
+
+        while (SDL_GetTicks() - start < 1000) {
+            SDL_Event e;
+            while (SDL_PollEvent(&e)) {
+                if (e.type == SDL_QUIT) {
+                    SDL_DestroyTexture(goTexture);
+                    return;
+                }
+            }
+
+            SDL_SetRenderDrawColor(renderer, 0,0,0,255);
+            SDL_RenderClear(renderer);
+
+            std::string s = std::to_string(i);
+            renderText(renderer, large_font, s, SCREEN_WIDTH/2 - 30, SCREEN_HEIGHT/2 - 50, white);
+
+            SDL_RenderPresent(renderer);
+            SDL_Delay(16);
+        }
+    }
+
+    Uint32 goStart = SDL_GetTicks();
+    while (SDL_GetTicks() - goStart < 1000) {
+        SDL_Event e;
+        while (SDL_PollEvent(&e)) {
+            if (e.type == SDL_QUIT) {
+                SDL_DestroyTexture(goTexture);
+                return;
+            }
+        }
+
+        SDL_SetRenderDrawColor(renderer, 0,0,0,255);
+        SDL_RenderClear(renderer);
+
+        SDL_RenderCopy(renderer, goTexture, nullptr, &goRect);
+
+        renderText(renderer, large_font,
+                   "GO!",
+                   SCREEN_WIDTH/2 - 60,
+                   goRect.y + goRect.h + 20,
+                   white);
+
+        SDL_RenderPresent(renderer);
+        SDL_Delay(16);
+    }
+
+    SDL_DestroyTexture(goTexture);
 }
 
 int main(int argc, char *argv[]) {
@@ -95,8 +184,8 @@ int main(int argc, char *argv[]) {
   }
 
   large_font = TTF_OpenFont("XITS-Regular.otf", 72);
-  medium_font = TTF_OpenFont("XITS-Regular.otf", 48);
-  small_font = TTF_OpenFont("XITS-Regular.otf", 36);
+  medium_font = TTF_OpenFont("XITS-Regular.otf", 40);
+  small_font = TTF_OpenFont("XITS-Regular.otf", 28);
 
   if (!large_font || !medium_font || !small_font) {
     std::cerr << "Failed to load fonts: " << TTF_GetError() << std::endl;
@@ -136,8 +225,7 @@ int main(int argc, char *argv[]) {
   }
 
 
-  GameState currentState = GameState::SETTINGS;
-  bool running = true;
+  currentState = GameState::SETTINGS;
   Uint32 currentTime = 0, lastFragmentTime = 0, gameStartTime = 0;
 
   while (running) {
