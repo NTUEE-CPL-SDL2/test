@@ -35,9 +35,9 @@ void showSettings(SDL_Renderer *renderer, TTF_Font *large_font, TTF_Font *medium
   std::cout << "3. Gameplay Settings" << std::endl;
   std::cout << "4. Back to Game" << std::endl;
 
-  LANES = 4;
+  LANES = 9;
   FRAGMENTS = 10;
-  MS_PER_FRAGMENT = 1000;
+  MS_PER_FRAGMENT = 100;
   MOD = "Game of Life (hold notes counted as alive cell, before new fragments "
         "load)";
   modSettingsFunc = mystd::get<2>(getModMap()[MOD]);
