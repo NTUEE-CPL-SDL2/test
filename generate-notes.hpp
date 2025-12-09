@@ -3,6 +3,7 @@
 #include <ctime>
 #include <vector>
 
+#include "include/qsort.hpp"
 #include "Game.hpp"
 
 mystd::vector<NoteData> generateRandomNotes(std::size_t lanes,
@@ -28,7 +29,7 @@ mystd::vector<NoteData> generateRandomNotes(std::size_t lanes,
   }
 
   // sort by startFragment
-  std::sort(notes.begin(), notes.end(),
+  qsort(notes.begin(), notes.end(),
             [](const NoteData &a, const NoteData &b) {
               return a.startFragment < b.startFragment;
             });

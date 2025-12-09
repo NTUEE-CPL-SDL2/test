@@ -154,7 +154,7 @@ public:
 
   // Called every msPerFragment ms
   void loadFragment(std::function<void(Game &)> foo = nullptr,
-                    bool before = true) {
+                    std::function<void(Game &)> bar = nullptr) {
     // 1. Process bottom fragments (misses + hold sustain end)
     for (std::size_t lane = 0; lane < lanes; ++lane) {
       int8_t &bottom = highway[lane].back();
@@ -175,7 +175,7 @@ public:
       }
     }
 
-    if (before && foo)
+    if (foo)
       foo(*this);
 
     // 2. Rotate all lanes
@@ -198,8 +198,8 @@ public:
     }
     nowFragment++;
 
-    if (!before && foo)
-      foo(*this);
+    if (bar)
+      bar(*this);
   }
 
   void keyPressed(std::size_t lane, uint64_t nowMs) {

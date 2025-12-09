@@ -1,13 +1,13 @@
 #include <string>
 
-#include "../include/tuple.hpp"
+#include "../include/array.hpp"
 
 #include "../Game.hpp"
 #include "../Mods.hpp"
 
 template <bool hold_alive>
-void gameOfLife(const mystd::tuple<uint8_t, uint8_t> &t,
-                Game &game) { // tuple: survive, alive
+void gameOfLife(const mystd::array<uint8_t, 2> &t,
+                Game &game) { // array: survive, revive
   auto oldHighway = game.highway;
 
   auto isAlive = [](int8_t val) -> bool {
@@ -40,11 +40,11 @@ void gameOfLife(const mystd::tuple<uint8_t, uint8_t> &t,
       int8_t &cell = game.highway[lane][f];
 
       if (cell == -1) { // alive
-        if (!((mystd::get<0>(t) >> aliveCount) & 0b1)) {
+        if (!((t[0] >> aliveCount) & 0b1)) {
           cell = 0; // die
         }
       } else if (cell == 0) { // dead
-        if (!((mystd::get<1>(t) >> aliveCount) & 0b1)) {
+        if (!((t[1] >> aliveCount) & 0b1)) {
           cell = -1; // born
         }
       }
@@ -55,12 +55,12 @@ void gameOfLife(const mystd::tuple<uint8_t, uint8_t> &t,
 
 void gameOfLifeHoldAlive(const void *pt, Game &game) {
   return gameOfLife<true>(
-      *static_cast<const mystd::tuple<uint8_t, uint8_t> *>(pt), game);
+      *static_cast<const mystd::array<uint8_t, 2> *>(pt), game);
 }
 
 void gameOfLifeHoldDead(const void *pt, Game &game) {
   return gameOfLife<false>(
-      *static_cast<const mystd::tuple<uint8_t, uint8_t> *>(pt), game);
+      *static_cast<const mystd::array<uint8_t, 2> *>(pt), game);
 }
 
 // Self-register
@@ -68,16 +68,16 @@ namespace {
 const bool registered = [] {
   mods::registerMod("Game of Life (hold notes counted as alive cell, before "
                     "new fragments load)",
-                    &gameOfLifeHoldAlive, true);
+                    &gameOfLifeHoldAlive, nullptr);
   mods::registerMod("Game of Life (hold notes counted as alive cell, after new "
                     "fragments load)",
-                    &gameOfLifeHoldAlive, false);
+                    nullptr, &gameOfLifeHoldAlive);
   mods::registerMod("Game of Life (hold notes counted as dead cell, before new "
                     "fragments load)",
-                    &gameOfLifeHoldDead, true);
+                    &gameOfLifeHoldDead, nullptr);
   mods::registerMod("Game of Life (hold notes counted as dead cell, after new "
                     "fragments load)",
-                    &gameOfLifeHoldDead, false);
+                    nullptr, &gameOfLifeHoldDead);
   return true;
 }();
 } // namespace
