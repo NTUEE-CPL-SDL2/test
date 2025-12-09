@@ -16,19 +16,19 @@
 #include "Settings.hpp"
 #include "mods/GameOfLife.hpp"
 
-
 TTF_Font *large_font, *medium_font, *small_font;
 int SCREEN_WIDTH = 1024;
 int SCREEN_HEIGHT = 768;
 
-std::size_t LANES = 4;
+std::size_t LANES = 8;
 std::size_t FRAGMENTS = 10;
-uint64_t MS_PER_FRAGMENT = 100;
+uint32_t MS_PER_FRAGMENT = 200;
 std::string MOD;
 SettingsFunc modSettingsFunc;
 
-Game* game = static_cast<Game*>(::operator new(sizeof(Game)));
-Renderer* gameRenderer = static_cast<Renderer*>(::operator new(sizeof(Renderer)));
+Game *game = static_cast<Game *>(::operator new(sizeof(Game)));
+Renderer *gameRenderer =
+    static_cast<Renderer *>(::operator new(sizeof(Renderer)));
 
 enum class GameState { SETTINGS, COUNTDOWN, GAME, PAUSE };
 
@@ -36,129 +36,125 @@ GameState currentState;
 bool running = true;
 
 void showPauseMenu(SDL_Renderer *renderer) {
-    bool running = true;
-    SDL_Event e;
+  bool running = true;
+  SDL_Event e;
 
-    SDL_Color white = {255,255,255,255};
-    SDL_Color blue  = {0,128,255,255};
-    SDL_Color dark  = {20,20,20,200};
+  SDL_Color white = {255, 255, 255, 255};
+  SDL_Color blue = {0, 128, 255, 255};
+  SDL_Color dark = {20, 20, 20, 200};
 
-    SDL_Rect resumeButton = { SCREEN_WIDTH/2 - 100, 150, 200, 60 };
-    SDL_Rect newGameButton = { SCREEN_WIDTH/2 - 100, 230, 200, 60 };
-    SDL_Rect exitButton = { SCREEN_WIDTH/2 - 100, 310, 200, 60 };
+  SDL_Rect resumeButton = {SCREEN_WIDTH / 2 - 100, 150, 200, 60};
+  SDL_Rect newGameButton = {SCREEN_WIDTH / 2 - 100, 230, 200, 60};
+  SDL_Rect exitButton = {SCREEN_WIDTH / 2 - 100, 310, 200, 60};
 
-    int choice = 0;   // 1=resume, 2=newgame, 3=exit
+  int choice = 0; // 1=resume, 2=newgame, 3=exit
 
-    while (running) {
-        while (SDL_PollEvent(&e)) {
-            if (e.type == SDL_QUIT) return;
-
-            if (e.type == SDL_MOUSEBUTTONDOWN && e.button.button == SDL_BUTTON_LEFT) {
-                int mx = e.button.x, my = e.button.y;
-                if (pointInRect(mx,my,resumeButton)) { choice = 1; running=false; }
-                else if (pointInRect(mx,my,newGameButton)) { choice = 2; running=false; }
-                else if (pointInRect(mx,my,exitButton)) { choice = 3; running=false; }
-            }
-        }
-
-        SDL_SetRenderDrawColor(renderer, dark.r, dark.g, dark.b, dark.a);
-        SDL_RenderFillRect(renderer, nullptr);
-
-        renderText(renderer, large_font, "Paused", SCREEN_WIDTH/2 - 80, 60, white);
-
-        renderRoundedRect(renderer, resumeButton, 15, blue);
-        renderRoundedRect(renderer, newGameButton, 15, blue);
-        renderRoundedRect(renderer, exitButton, 15, blue);
-
-        renderText(renderer, medium_font, "Resume", resumeButton.x + 45, resumeButton.y + 15, white);
-        renderText(renderer, medium_font, "New Game", newGameButton.x + 35, newGameButton.y + 15, white);
-        renderText(renderer, medium_font, "Exit Game", exitButton.x + 45, exitButton.y + 15, white);
-
-        SDL_RenderPresent(renderer);
-        SDL_Delay(16);
-    }
-
-    if (choice == 1) {
+  while (running) {
+    while (SDL_PollEvent(&e)) {
+      if (e.type == SDL_QUIT)
         return;
+
+      if (e.type == SDL_MOUSEBUTTONDOWN && e.button.button == SDL_BUTTON_LEFT) {
+        int mx = e.button.x, my = e.button.y;
+        if (pointInRect(mx, my, resumeButton)) {
+          choice = 1;
+          running = false;
+        } else if (pointInRect(mx, my, newGameButton)) {
+          choice = 2;
+          running = false;
+        } else if (pointInRect(mx, my, exitButton)) {
+          choice = 3;
+          running = false;
+        }
+      }
     }
-    else if (choice == 2) {
-        currentState = GameState::SETTINGS;
-    }
-    else if (choice == 3) {
-       running = false; 
-    }
+
+    SDL_SetRenderDrawColor(renderer, dark.r, dark.g, dark.b, dark.a);
+    SDL_RenderFillRect(renderer, nullptr);
+
+    renderText(renderer, large_font, "Paused", SCREEN_WIDTH / 2 - 80, 60,
+               white);
+
+    renderRoundedRect(renderer, resumeButton, 15, blue);
+    renderRoundedRect(renderer, newGameButton, 15, blue);
+    renderRoundedRect(renderer, exitButton, 15, blue);
+
+    renderText(renderer, medium_font, "Resume", resumeButton.x + 45,
+               resumeButton.y + 15, white);
+    renderText(renderer, medium_font, "New Game", newGameButton.x + 35,
+               newGameButton.y + 15, white);
+    renderText(renderer, medium_font, "Exit Game", exitButton.x + 45,
+               exitButton.y + 15, white);
+
+    SDL_RenderPresent(renderer);
+  }
+
+  if (choice == 1) {
+    return;
+  } else if (choice == 2) {
+    currentState = GameState::SETTINGS;
+  } else if (choice == 3) {
+    running = false;
+  }
 }
 
-void showCountdown(SDL_Renderer* renderer) {
-    SDL_Color white = {255, 255, 255, 255};
+void showCountdown(SDL_Renderer *renderer) {
+  SDL_Color white = {255, 255, 255, 255};
 
-    SDL_Surface* goSurface = IMG_Load("res/img/GO.png");
-    if (!goSurface) {
-        std::cerr << "IMG_Load Error: " << IMG_GetError() << std::endl;
-        return;
-    }
-    SDL_Texture* goTexture = SDL_CreateTextureFromSurface(renderer, goSurface);
-    SDL_FreeSurface(goSurface);
+  SDL_Surface *goSurface = IMG_Load("res/img/GO.png");
+  if (!goSurface) {
+    std::cerr << "IMG_Load Error: " << IMG_GetError() << std::endl;
+    return;
+  }
+  SDL_Texture *goTexture = SDL_CreateTextureFromSurface(renderer, goSurface);
+  SDL_FreeSurface(goSurface);
 
-    int goW, goH;
-    SDL_QueryTexture(goTexture, nullptr, nullptr, &goW, &goH);
+  int goW, goH;
+  SDL_QueryTexture(goTexture, nullptr, nullptr, &goW, &goH);
+  SDL_Rect goRect = {(SCREEN_WIDTH - goW) / 2, (SCREEN_HEIGHT - goH) / 2 - 40,
+                     goW, goH};
 
-    SDL_Rect goRect = {
-        (SCREEN_WIDTH - goW) / 2,
-        (SCREEN_HEIGHT - goH) / 2 - 40,
-        goW,
-        goH
-    };
+  int count = 3;
+  Uint32 lastTick = SDL_GetTicks();
+  bool showGo = false;
 
-    for (int i = 3; i > 0; --i) {
-        Uint32 start = SDL_GetTicks();
-
-        while (SDL_GetTicks() - start < 1000) {
-            SDL_Event e;
-            while (SDL_PollEvent(&e)) {
-                if (e.type == SDL_QUIT) {
-                    SDL_DestroyTexture(goTexture);
-                    return;
-                }
-            }
-
-            SDL_SetRenderDrawColor(renderer, 0,0,0,255);
-            SDL_RenderClear(renderer);
-
-            std::string s = std::to_string(i);
-            renderText(renderer, large_font, s, SCREEN_WIDTH/2 - 30, SCREEN_HEIGHT/2 - 50, white);
-
-            SDL_RenderPresent(renderer);
-            SDL_Delay(16);
-        }
+  bool running = true;
+  while (running) {
+    SDL_Event e;
+    while (SDL_PollEvent(&e)) {
+      if (e.type == SDL_QUIT) {
+        running = false;
+      }
     }
 
-    Uint32 goStart = SDL_GetTicks();
-    while (SDL_GetTicks() - goStart < 1000) {
-        SDL_Event e;
-        while (SDL_PollEvent(&e)) {
-            if (e.type == SDL_QUIT) {
-                SDL_DestroyTexture(goTexture);
-                return;
-            }
-        }
-
-        SDL_SetRenderDrawColor(renderer, 0,0,0,255);
-        SDL_RenderClear(renderer);
-
-        SDL_RenderCopy(renderer, goTexture, nullptr, &goRect);
-
-        renderText(renderer, large_font,
-                   "GO!",
-                   SCREEN_WIDTH/2 - 60,
-                   goRect.y + goRect.h + 20,
-                   white);
-
-        SDL_RenderPresent(renderer);
-        SDL_Delay(16);
+    Uint32 now = SDL_GetTicks();
+    if (!showGo && now - lastTick >= 1000) {
+      count--;
+      lastTick = now;
+      if (count == 0) {
+        showGo = true;
+        lastTick = now;
+      }
+    } else if (showGo && now - lastTick >= 1000) {
+      break;
     }
 
-    SDL_DestroyTexture(goTexture);
+    SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
+    SDL_RenderClear(renderer);
+
+    if (!showGo) {
+      renderText(renderer, large_font, std::to_string(count), SCREEN_WIDTH / 2,
+                 SCREEN_HEIGHT / 2, white);
+    } else {
+      SDL_RenderCopy(renderer, goTexture, nullptr, &goRect);
+      renderText(renderer, large_font, "GO!", SCREEN_WIDTH / 2,
+                 goRect.y + goRect.h + 20, white);
+    }
+
+    SDL_RenderPresent(renderer);
+  }
+
+  SDL_DestroyTexture(goTexture);
 }
 
 int main(int argc, char *argv[]) {
@@ -223,7 +219,6 @@ int main(int argc, char *argv[]) {
     SDL_Quit();
     return 1;
   }
-
 
   currentState = GameState::SETTINGS;
   Uint32 currentTime = 0, lastFragmentTime = 0, gameStartTime = 0;
@@ -370,17 +365,21 @@ int main(int argc, char *argv[]) {
       currentState = GameState::GAME;
       break;
 
-    case GameState::GAME:
+    case GameState::GAME: {
       game->clearExpiredEffects(currentTime - gameStartTime);
 
-      if (currentTime - lastFragmentTime >= MS_PER_FRAGMENT) {
+      uint32_t offsetMs = currentTime - lastFragmentTime;
+
+      if (offsetMs >= MS_PER_FRAGMENT) {
         game->loadFragment(mystd::get<0>(getModMap()[MOD]),
-                          mystd::get<1>(getModMap()[MOD]));
+                           mystd::get<1>(getModMap()[MOD]));
         lastFragmentTime += MS_PER_FRAGMENT;
+        offsetMs = 0;
       }
-      gameRenderer->render(renderer);
+      gameRenderer->render(renderer, offsetMs);
 
       break;
+    }
 
     case GameState::PAUSE:
       showPauseMenu(renderer);
@@ -388,11 +387,9 @@ int main(int argc, char *argv[]) {
     }
 
     SDL_RenderPresent(renderer);
-    
+
     Uint32 tmpTime = SDL_GetTicks();
     gameRenderer->fps = 1000.0f / (float)(tmpTime - currentTime);
-
-    SDL_Delay(1);
   }
 
   delete gameRenderer;

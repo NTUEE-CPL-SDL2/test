@@ -1,8 +1,8 @@
 #pragma once
 
 #include <functional>
-#include <string>
 #include <map>
+#include <string>
 
 #include "include/tuple.hpp"
 #include "include/vector.hpp"
@@ -12,11 +12,9 @@
 using ModFunc = void (*)(Game &game);
 using SettingsFunc = void (*)(SDL_Renderer *, TTF_Font *, int, int);
 
-inline std::map<std::string,
-                          mystd::tuple<ModFunc, ModFunc, SettingsFunc>> &
+inline std::map<std::string, mystd::tuple<ModFunc, ModFunc, SettingsFunc>> &
 getModMap() {
-  static std::map<std::string,
-                            mystd::tuple<ModFunc, ModFunc, SettingsFunc>>
+  static std::map<std::string, mystd::tuple<ModFunc, ModFunc, SettingsFunc>>
       modMap;
   return modMap;
 }
