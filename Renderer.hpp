@@ -203,7 +203,7 @@ public:
 
     // Draw center effects
     for (std::size_t i = 0; i < game.centerEffects.size(); ++i) {
-      drawCenterEffect(rnd, game.centerEffects.c[i].content);
+      drawCenterEffect(rnd, game.centerEffects.c[i].content, game.centerEffects.c[i].num);
     }
   }
 
@@ -367,7 +367,7 @@ private:
              small_font, textColor, ALIGN_CENTER);
   }
 
-  void drawCenterEffect(SDL_Renderer *rnd, uint32_t effect) {
+  void drawCenterEffect(SDL_Renderer *rnd, uint32_t effect, uint32_t num) {
     if (effect & COMBO) {
       std::string imagePath = "res/img/combo.png";
       std::string comboText = std::to_string(game.combo);
@@ -405,7 +405,7 @@ private:
 
         drawText(rnd, comboText, screenW / 2, screenH / 3, large_font,
                  comboColor, ALIGN_CENTER);
-        drawText(rnd, "COMBO: " + std::to_string(game.combo), screenW / 2,
+        drawText(rnd, "COMBO: " + std::to_string(num), screenW / 2,
                  screenH / 3 + 80, medium_font, comboColor, ALIGN_CENTER);
       }
     }
@@ -435,7 +435,7 @@ private:
 
         SDL_RenderCopy(rnd, imageTexture, nullptr, &destRect);
 
-        drawText(rnd, "SCORE: " + std::to_string(game.score), screenW / 2, 150,
+        drawText(rnd, "SCORE: " + std::to_string(num), screenW / 2, 150,
                  medium_font, {100, 255, 100, 255}, ALIGN_CENTER);
       }
     }

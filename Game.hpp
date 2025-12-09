@@ -36,8 +36,9 @@ const uint32_t COMBO = 1u;
 const uint32_t SCORE = 2u;
 
 struct Effect {
-  uint32_t content;
   uint64_t endTime;
+  uint32_t content;
+  uint32_t num;
 };
 
 bool operator<(Effect lhs, Effect rhs) { return lhs.endTime > rhs.endTime; }
@@ -84,7 +85,7 @@ public:
     combo++;
     maxCombo = std::max(maxCombo, combo);
     if (combo > 1)
-      centerEffects.push({COMBO, nowMs + msPerFragment * fragments});
+      centerEffects.push({nowMs + msPerFragment * fragments * 3, COMBO, combo});
   }
 
   inline void resetCombo() { combo = 0; }
@@ -134,7 +135,7 @@ public:
     laneEffects[lane].endTime = nowMs + msPerFragment * fragments;
 
     if ((score / 1000 - prev) > 0)
-      centerEffects.push({SCORE, nowMs + msPerFragment * fragments});
+      centerEffects.push({nowMs + msPerFragment * fragments * 3, SCORE, score});
   }
 
   void addHoldScore(uint64_t nowMs, std::size_t lane) {
@@ -147,7 +148,7 @@ public:
     uint32_t prev = score / 1000;
     score += static_cast<uint32_t>(f);
     if ((score / 1000 - prev) > 0) {
-      centerEffects.push({SCORE, nowMs + msPerFragment * fragments});
+      centerEffects.push({nowMs + msPerFragment * fragments * 3, SCORE, score});
       std::cout << "a";
     }
   }

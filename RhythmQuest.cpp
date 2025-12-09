@@ -284,7 +284,7 @@ int main(int argc, char *argv[]) {
       break;
 
     case GameState::GAME:
-      game->clearExpiredEffects(currentTime);
+      game->clearExpiredEffects(currentTime - gameStartTime);
 
       if (currentTime - lastFragmentTime >= MS_PER_FRAGMENT) {
         game->loadFragment(mystd::get<0>(getModMap()[MOD]),
@@ -292,14 +292,6 @@ int main(int argc, char *argv[]) {
         lastFragmentTime += MS_PER_FRAGMENT;
       }
 
-      static Uint32 lastFPSTime = currentTime;
-      static int frameCount = 0;
-      frameCount++;
-      if (currentTime - lastFPSTime >= 1000) {
-        gameRenderer->fps = frameCount;
-        frameCount = 0;
-        lastFPSTime = currentTime;
-      }
       break;
 
     case GameState::PAUSE:
@@ -326,10 +318,15 @@ int main(int argc, char *argv[]) {
     }
 
     SDL_RenderPresent(renderer);
+    
+    Uint32 tmpTime = SDL_GetTicks();
+    gameRenderer->fps = 1000.0f / (float)(tmpTime - currentTime);
 
     SDL_Delay(1);
   }
 
+  delete gameRenderer;
+  delete game;
   SDL_DestroyRenderer(renderer);
   SDL_DestroyWindow(window);
   TTF_CloseFont(large_font);
