@@ -4,19 +4,18 @@
 #include <SDL2/SDL_ttf.h>
 
 #include "../include/array.hpp"
-#include "../include/tuple.hpp"
 
 #include "../Game.hpp"
 #include "../Mods.hpp"
 
 namespace gameOfLife {
 
-static mystd::array<uint8_t, 2> currentRules = {0b11111111, 0b00000000};
+static mystd::array<uint16_t, 2> currentRules = {0b111111111, 0};
 
 template <bool hold_alive>
 void gameOfLife(Game &game) {
     auto oldHighway = game.highway;
-    const auto& rules = getRules();
+    const auto& rules = currentRules;
 
     auto isAlive = [](int8_t val) -> bool {
         if (val == -1)
@@ -52,7 +51,7 @@ void gameOfLife(Game &game) {
                     cell = 0; // die
                 }
             } else if (cell == 0) { // dead
-                if (!((rules[1] >> aliveCount) & 0b1)) {
+                if ((rules[1] >> aliveCount) & 0b1) {
                     cell = -1; // born
                 }
             }
@@ -70,13 +69,13 @@ void gameOfLifeHoldDead(Game &game) {
 }
 
 void gameOfLifeSettings(SDL_Renderer* renderer, TTF_Font* font, int screenWidth, int screenHeight) {
-    mystd::array<uint8_t, 2> tempRules = currentRules;
+    mystd::array<uint16_t, 2> tempRules = currentRules;
 
     const int buttonSize = 40;
     const int buttonSpacing = 5;
     const int rowSpacing = 60;
 
-    int totalWidth = 8 * buttonSize + 7 * buttonSpacing;
+    int totalWidth = 9 * buttonSize + 8 * buttonSpacing;
     int startX = (screenWidth - totalWidth) / 2;
     int row1Y = screenHeight / 2 - rowSpacing;
     int row2Y = screenHeight / 2 + rowSpacing;
@@ -207,26 +206,26 @@ namespace {
 const bool registered = [] {
     registerMod("Game of Life (hold notes counted as alive cell, before "
                 "new fragments load)",
-                [](Game& game) { gameOfLife::gameOfLifeHoldAlive(game); },
+                &gameOfLife::gameOfLifeHoldAlive,
                 nullptr,
                 gameOfLife::gameOfLifeSettings);
     
     registerMod("Game of Life (hold notes counted as alive cell, after new "
                 "fragments load)",
                 nullptr,
-                [](Game& game) { gameOfLife::gameOfLifeHoldAlive(game); },
+                &gameOfLife::gameOfLifeHoldAlive,
                 gameOfLife::gameOfLifeSettings);
     
     registerMod("Game of Life (hold notes counted as dead cell, before new "
                 "fragments load)",
-                [](Game& game) { gameOfLife::gameOfLifeHoldDead(game); },
+                &gameOfLife::gameOfLifeHoldDead,
                 nullptr,
                 gameOfLife::gameOfLifeSettings);
     
     registerMod("Game of Life (hold notes counted as dead cell, after new "
                 "fragments load)",
                 nullptr,
-                [](Game& game) { gameOfLife::gameOfLifeHoldDead(game); },
+                &gameOfLife::gameOfLifeHoldDead,
                 gameOfLife::gameOfLifeSettings);
     
     return true;

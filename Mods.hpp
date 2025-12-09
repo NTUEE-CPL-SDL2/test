@@ -9,15 +9,19 @@
 
 #include "Game.hpp"
 
-using ModFunc = void (*)(const void *, Game &game);
-using SettingsFunc = bool (*)();
+using ModFunc = void (*)(Game &game);
+using SettingsFunc = void (*)(SDL_Renderer *, TTF_Font *, int, int);
 
-inline std::unordered_map<std::string, mystd::tuple<ModFunc, ModFunc, SettingsFunc>> &
+inline std::unordered_map<std::string,
+                          mystd::tuple<ModFunc, ModFunc, SettingsFunc>> &
 getModMap() {
-  static std::unordered_map<std::string, mystd::tuple<ModFunc, ModFunc, SettingsFunc>> modMap;
+  static std::unordered_map<std::string,
+                            mystd::tuple<ModFunc, ModFunc, SettingsFunc>>
+      modMap;
   return modMap;
 }
 
-inline void registerMod(const std::string &name, ModFunc foo, ModFunc bar, SettingsFunc set) {
+inline void registerMod(const std::string &name, ModFunc foo, ModFunc bar,
+                        SettingsFunc set) {
   getModMap()[name] = mystd::make_tuple(foo, bar, set);
 }
