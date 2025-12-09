@@ -19,8 +19,8 @@ struct KeyNoteData {
 // 滑鼠物件結構（同學B使用）
 struct MouseNoteData {
     std::size_t startFragment;
-    int x;           // X座標
-    int type;        // 0=GREEN(拾取), 1=RED(躲避)
+    std::size_t lane;    // 軌道編號 (0-3)
+    int type;            // 0=GREEN(拾取), 1=RED(躲避)
 };
 
 class ChartParser {
@@ -51,14 +51,20 @@ private:
         }
     }
     
-    void parseKeyNotes(std::ifstream& file) {
+    // 不使用 seekg，改用返回下一行的方式
+    std::string parseKeyNotes(std::ifstream& file) {
         std::string line;
         int currentDensity = 4;
         std::size_t currentFragment = 0;
         
         while (std::getline(file, line)) {
             line = trim(line);
-            if (line.find("&") == 0) break;
+            
+            // 遇到下一個區塊標籤時，返回該標籤
+            if (!line.empty() && line[0] == '&') {
+                return line;
+            }
+            
             if (line.empty() || line[0] == '#') continue;
             
             if (line[0] == '{' && line.back() == '}') {
@@ -68,6 +74,7 @@ private:
             
             parseKeyNoteLine(line, currentDensity, currentFragment);
         }
+        return "";
     }
     
     void parseKeyNoteLine(const std::string& line, int density, std::size_t& currentFragment) {
@@ -113,23 +120,41 @@ private:
         }
     }
     
-    void parseMouseNotes(std::ifstream& file) {
+    // 不使用 seekg，改用返回下一行的方式
+    std::string parseMouseNotes(std::ifstream& file) {
+        std::cout << "[DEBUG] Entering parseMouseNotes()" << std::endl;
         std::string line;
         int currentDensity = 4;
         std::size_t currentFragment = 0;
+        int lineCount = 0;
         
         while (std::getline(file, line)) {
             line = trim(line);
-            if (line.find("&") == 0) break;
-            if (line.empty() || line[0] == '#') continue;
+            lineCount++;
+            std::cout << "[DEBUG] Mouse line " << lineCount << ": '" << line << "'" << std::endl;
             
-            if (line[0] == '{' && line.back() == '}') {
-                currentDensity = std::stoi(line.substr(1, line.length() - 2));
+            // 遇到下一個區塊標籤時，返回該標籤
+            if (!line.empty() && line[0] == '&') {
+                std::cout << "[DEBUG] Found next section tag: " << line << std::endl;
+                return line;
+            }
+            
+            if (line.empty() || line[0] == '#') {
+                std::cout << "[DEBUG] Skipping empty/comment line" << std::endl;
                 continue;
             }
             
+            if (line[0] == '{' && line.back() == '}') {
+                currentDensity = std::stoi(line.substr(1, line.length() - 2));
+                std::cout << "[DEBUG] Density changed to: " << currentDensity << std::endl;
+                continue;
+            }
+            
+            std::cout << "[DEBUG] Parsing mouse note line" << std::endl;
             parseMouseNoteLine(line, currentDensity, currentFragment);
         }
+        std::cout << "[DEBUG] Reached end of file, total mouse notes: " << mouseNotes.size() << std::endl;
+        return "";
     }
     
     void parseMouseNoteLine(const std::string& line, int density, std::size_t& currentFragment) {
@@ -140,6 +165,7 @@ private:
         while (std::getline(ss, token, ',')) {
             token = trim(token);
             if (!token.empty()) {
+                std::cout << "[DEBUG] Mouse token: '" << token << "' at fragment " << currentFragment << std::endl;
                 parseMouseNoteToken(token, currentFragment);
             }
             currentFragment += fragmentsPerGrid;
@@ -149,14 +175,15 @@ private:
     void parseMouseNoteToken(const std::string& token, std::size_t fragment) {
         char type = token[0];
         
-        if (type == 'G') {
-            // 綠色拾取物: G200
-            int x = std::stoi(token.substr(1));
-            mouseNotes.push_back({fragment, x, 0});
-        } else if (type == 'R') {
-            // 紅色障礙物: R400
-            int x = std::stoi(token.substr(1));
-            mouseNotes.push_back({fragment, x, 1});
+        if (type == 'G' || type == 'R') {
+            // 格式: G1, G2, R3, R4
+            int lane = std::stoi(token.substr(1)) - 1;  // 1-4 轉成 0-3
+            int noteType = (type == 'G') ? 0 : 1;
+            mouseNotes.push_back({fragment, static_cast<std::size_t>(lane), noteType});
+            std::cout << "[DEBUG] Added mouse note: type=" << (noteType == 0 ? "GREEN" : "RED") 
+                      << " lane=" << lane << " fragment=" << fragment << std::endl;
+        } else {
+            std::cout << "[DEBUG] Invalid mouse token type: " << type << std::endl;
         }
     }
 
@@ -171,17 +198,31 @@ public:
         }
         
         std::string line;
-        while (std::getline(file, line)) {
+        std::string nextLine = "";
+        
+        while (true) {
+            // 如果有緩存的下一行，使用它；否則從檔案讀取
+            if (!nextLine.empty()) {
+                line = nextLine;
+                nextLine = "";
+            } else {
+                if (!std::getline(file, line)) break;
+            }
+            
             line = trim(line);
+            std::cout << "[DEBUG] Main loop reading: '" << line << "'" << std::endl;
+            
             if (line.empty() || line[0] == '#') continue;
             
             if (line.find("&bpm=") == 0 || line.find("&offset=") == 0 || 
                 line.find("&music=") == 0 || line.find("&fragments=") == 0) {
                 parseMetadata(line);
             } else if (line == "&keynotes=") {
-                parseKeyNotes(file);
+                std::cout << "[DEBUG] Found &keynotes= tag" << std::endl;
+                nextLine = parseKeyNotes(file);
             } else if (line == "&mousenotes=") {
-                parseMouseNotes(file);
+                std::cout << "[DEBUG] Found &mousenotes= tag" << std::endl;
+                nextLine = parseMouseNotes(file);
             }
         }
         
@@ -194,7 +235,7 @@ public:
         
         std::cout << "[OK] Chart loaded: " << filepath << std::endl;
         std::cout << "     BPM=" << bpm << ", Fragments/Beat=" << fragmentsPerBeat << std::endl;
-        std::cout << "     Key Notes=" << keyNotes.size() << ", Mouse Notes=" << mouseNotes.size() << std::endl;
+        std::cout << "     Key notes=" << keyNotes.size() << ", Mouse notes=" << mouseNotes.size() << std::endl;
         
         return true;
     }
@@ -213,26 +254,41 @@ public:
     }
     
     void printChart() const {
-        std::cout << "\n=== Chart Info ===" << std::endl;
-        std::cout << "BPM: " << bpm << ", Offset: " << offset << "ms" << std::endl;
-        std::cout << "Fragments/Beat: " << fragmentsPerBeat << std::endl;
-        std::cout << "Music: " << musicFile << std::endl;
+        std::cout << "\n=== Chart Information ===" << std::endl;
+        std::cout << "BPM: " << bpm << ", Offset: " << offset << " ms" << std::endl;
+        std::cout << "Fragments per beat: " << fragmentsPerBeat << std::endl;
+        std::cout << "Music file: " << musicFile << std::endl;
         
         std::cout << "\n=== Key Notes (" << keyNotes.size() << ") ===" << std::endl;
-        std::cout << "Fragment\tLane\tHolds\tTime(ms)" << std::endl;
-        for (size_t i = 0; i < std::min(size_t(10), keyNotes.size()); i++) {
-            const auto& n = keyNotes[i];
-            std::cout << n.startFragment << "\t\t" << n.lane << "\t" 
-                     << (int)n.holds << "\t" << getFragmentTime(n.startFragment) << std::endl;
+        if (!keyNotes.empty()) {
+            std::cout << "Fragment\tLane\tHolds\tTime(ms)" << std::endl;
+            for (size_t i = 0; i < std::min(size_t(5), keyNotes.size()); i++) {
+                const auto& n = keyNotes[i];
+                std::cout << n.startFragment << "\t\t" << n.lane << "\t";
+                if (n.holds == -1) {
+                    std::cout << "TAP";
+                } else {
+                    std::cout << (int)n.holds;
+                }
+                std::cout << "\t" << getFragmentTime(n.startFragment) << std::endl;
+            }
+            if (keyNotes.size() > 5) {
+                std::cout << "... (showing first 5 of " << keyNotes.size() << ")" << std::endl;
+            }
         }
         
         std::cout << "\n=== Mouse Notes (" << mouseNotes.size() << ") ===" << std::endl;
-        std::cout << "Fragment\tX\tType\tTime(ms)" << std::endl;
-        for (size_t i = 0; i < std::min(size_t(10), mouseNotes.size()); i++) {
-            const auto& m = mouseNotes[i];
-            std::cout << m.startFragment << "\t\t" << m.x << "\t" 
-                     << (m.type == 0 ? "GREEN" : "RED") << "\t" 
-                     << getFragmentTime(m.startFragment) << std::endl;
+        if (!mouseNotes.empty()) {
+            std::cout << "Fragment\tLane\tType\tTime(ms)" << std::endl;
+            for (size_t i = 0; i < std::min(size_t(5), mouseNotes.size()); i++) {
+                const auto& m = mouseNotes[i];
+                std::cout << m.startFragment << "\t\t" << m.lane << "\t" 
+                         << (m.type == 0 ? "GREEN" : "RED") << "\t" 
+                         << getFragmentTime(m.startFragment) << std::endl;
+            }
+            if (mouseNotes.size() > 5) {
+                std::cout << "... (showing first 5 of " << mouseNotes.size() << ")" << std::endl;
+            }
         }
     }
 };
