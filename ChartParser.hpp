@@ -51,14 +51,18 @@ private:
         }
     }
     
-    void parseKeyNotes(std::ifstream& file) {
+    std::string parseKeyNotes(std::ifstream& file) {
         std::string line;
         int currentDensity = 4;
         std::size_t currentFragment = 0;
         
         while (std::getline(file, line)) {
             line = trim(line);
-            if (line.find("&") == 0) break;
+            
+            if (!line.empty() && line[0] == '&') {
+                return line;
+            }
+            
             if (line.empty() || line[0] == '#') continue;
             
             if (line[0] == '{' && line.back() == '}') {
@@ -68,6 +72,7 @@ private:
             
             parseKeyNoteLine(line, currentDensity, currentFragment);
         }
+        return "";
     }
     
     void parseKeyNoteLine(const std::string& line, int density, std::size_t& currentFragment) {
@@ -113,14 +118,18 @@ private:
         }
     }
     
-    void parseMouseNotes(std::ifstream& file) {
+    std::string parseMouseNotes(std::ifstream& file) {
         std::string line;
         int currentDensity = 4;
         std::size_t currentFragment = 0;
         
         while (std::getline(file, line)) {
             line = trim(line);
-            if (line.find("&") == 0) break;
+            
+            if (!line.empty() && line[0] == '&') {
+                return line;
+            }
+            
             if (line.empty() || line[0] == '#') continue;
             
             if (line[0] == '{' && line.back() == '}') {
@@ -130,6 +139,7 @@ private:
             
             parseMouseNoteLine(line, currentDensity, currentFragment);
         }
+        return "";
     }
     
     void parseMouseNoteLine(const std::string& line, int density, std::size_t& currentFragment) {
@@ -150,8 +160,7 @@ private:
         char type = token[0];
         
         if (type == 'G' || type == 'R') {
-            // 格式: G1, G2, R3, R4
-            int lane = std::stoi(token.substr(1)) - 1;  // 1-4 轉成 0-3
+            int lane = std::stoi(token.substr(1)) - 1;
             int noteType = (type == 'G') ? 0 : 1;
             mouseNotes.push_back({fragment, static_cast<std::size_t>(lane), noteType});
         }
@@ -168,17 +177,27 @@ public:
         }
         
         std::string line;
-        while (std::getline(file, line)) {
+        std::string nextLine = "";
+        
+        while (true) {
+            if (!nextLine.empty()) {
+                line = nextLine;
+                nextLine = "";
+            } else {
+                if (!std::getline(file, line)) break;
+            }
+            
             line = trim(line);
+            
             if (line.empty() || line[0] == '#') continue;
             
             if (line.find("&bpm=") == 0 || line.find("&offset=") == 0 || 
                 line.find("&music=") == 0 || line.find("&fragments=") == 0) {
                 parseMetadata(line);
             } else if (line == "&keynotes=") {
-                parseKeyNotes(file);
+                nextLine = parseKeyNotes(file);
             } else if (line == "&mousenotes=") {
-                parseMouseNotes(file);
+                nextLine = parseMouseNotes(file);
             }
         }
         
