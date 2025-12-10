@@ -22,9 +22,9 @@ TTF_Font *large_font, *medium_font, *small_font;
 int SCREEN_WIDTH = 1024;
 int SCREEN_HEIGHT = 768;
 
-std::size_t LANES = 8;
+std::size_t LANES = 4;  // 預設 4，可以在 Settings 改
 std::size_t FRAGMENTS = 10;
-uint32_t MS_PER_FRAGMENT = 200;
+uint32_t MS_PER_FRAGMENT = 125;  // 會從譜面計算
 std::string MOD;
 SettingsFunc modSettingsFunc;
 
@@ -50,7 +50,7 @@ void showPauseMenu(SDL_Renderer *renderer) {
   SDL_Rect newGameButton = {SCREEN_WIDTH / 2 - 100, 230, 200, 60};
   SDL_Rect exitButton = {SCREEN_WIDTH / 2 - 100, 310, 200, 60};
 
-  int choice = 0; // 1=resume, 2=newgame, 3=exit
+  int choice = 0;
 
   while (running) {
     while (SDL_PollEvent(&e)) {
@@ -161,7 +161,7 @@ void showCountdown(SDL_Renderer *renderer) {
 }
 
 int main(int argc, char *argv[]) {
-  if (SDL_Init(SDL_INIT_VIDEO) < 0) {
+  if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO) < 0) {
     std::cerr << "SDL could not initialize: " << SDL_GetError() << std::endl;
     return 1;
   }
@@ -211,9 +211,6 @@ int main(int argc, char *argv[]) {
   SDL_Renderer *renderer = SDL_CreateRenderer(
       window, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
 
-    
-      
-
   if (!renderer) {
     std::cerr << "Renderer could not be created: " << SDL_GetError()
               << std::endl;
@@ -225,6 +222,37 @@ int main(int argc, char *argv[]) {
     IMG_Quit();
     SDL_Quit();
     return 1;
+  }
+
+  // ========================================
+  // 預先載入譜面以取得參數（但不影響 Settings）
+  // ========================================
+  std::cout << "\n========================================" << std::endl;
+  std::cout << "  Pre-loading Chart File" << std::endl;
+  std::cout << "========================================" << std::endl;
+  
+  bool chartLoaded = false;
+  if (chartParser->load("./chart/test_chart.txt")) {
+    chartLoaded = true;
+    
+    // 從譜面計算 MS_PER_FRAGMENT
+    int bpm = chartParser->getBPM();
+    int fragmentsPerBeat = chartParser->getFragmentsPerBeat();
+    double beatDuration = 60000.0 / bpm;
+    MS_PER_FRAGMENT = static_cast<uint32_t>(beatDuration / fragmentsPerBeat);
+    
+    std::cout << "[INFO] Chart BPM: " << bpm << std::endl;
+    std::cout << "[INFO] Fragments per beat: " << fragmentsPerBeat << std::endl;
+    std::cout << "[INFO] MS per fragment: " << MS_PER_FRAGMENT << std::endl;
+    std::cout << "[INFO] Key notes in chart: " << chartParser->getKeyNotes().size() << std::endl;
+    std::cout << "[INFO] Mouse notes in chart: " << chartParser->getMouseNotes().size() << std::endl;
+    
+    // 載入音樂
+    if (!musicManager->loadMusic(chartParser->getMusicFile())) {
+      std::cerr << "[WARN] Music file not found" << std::endl;
+    }
+  } else {
+    std::cerr << "[WARN] Chart file not found, will use random notes" << std::endl;
   }
 
   currentState = GameState::SETTINGS;
@@ -242,6 +270,8 @@ int main(int argc, char *argv[]) {
         if (event.window.event == SDL_WINDOWEVENT_RESIZED) {
           int newWidth = event.window.data1;
           int newHeight = event.window.data2;
+          SCREEN_WIDTH = newWidth;
+          SCREEN_HEIGHT = newHeight;
           gameRenderer->updateDimension(newWidth, newHeight);
         }
       }
@@ -264,8 +294,10 @@ int main(int argc, char *argv[]) {
         if (event.type == SDL_KEYDOWN) {
           if (event.key.keysym.sym == SDLK_ESCAPE) {
             currentState = GameState::PAUSE;
+            musicManager->pauseMusic();
           } else if (event.key.keysym.sym == SDLK_p) {
             currentState = GameState::PAUSE;
+            musicManager->pauseMusic();
           } else {
             std::size_t lane = -1;
             switch (event.key.keysym.sym) {
@@ -351,6 +383,7 @@ int main(int argc, char *argv[]) {
           } else if (event.key.keysym.sym == SDLK_p ||
                      event.key.keysym.sym == SDLK_RETURN) {
             currentState = GameState::GAME;
+            musicManager->resumeMusic();
           } else if (event.key.keysym.sym == SDLK_s) {
             currentState = GameState::SETTINGS;
           }
@@ -360,34 +393,67 @@ int main(int argc, char *argv[]) {
     }
 
     switch (currentState) {
-    case GameState::SETTINGS:
+    case GameState::SETTINGS: {
       showSettings(renderer);
-      // 載入譜面
-      if (chartParser->load("./chart/test_chart.txt")) {
-        std::cout << "[OK] Chart loaded successfully" << std::endl;
+      
+      // Settings 結束後，根據是否有譜面來初始化遊戲
+      if (chartLoaded) {
+        std::cout << "\n[INFO] Initializing game with chart notes..." << std::endl;
+        std::cout << "[INFO] Using LANES=" << LANES << " (from Settings)" << std::endl;
         
-        // 取得音符資料
+        // 轉換 KeyNoteData 到 NoteData，但只取前 LANES 個軌道
         const std::vector<KeyNoteData>& keyNotes = chartParser->getKeyNotes();
-        const std::vector<MouseNoteData>& mouseNotes = chartParser->getMouseNotes();
+        mystd::vector<NoteData> gameNotes;
         
-        std::cout << "[INFO] Key notes: " << keyNotes.size() << std::endl;
-        std::cout << "[INFO] Mouse notes: " << mouseNotes.size() << std::endl;
+        for (const auto& kn : keyNotes) {
+          if (kn.lane < LANES) {  // 只載入在選定軌道範圍內的音符
+            NoteData nd;
+            nd.startFragment = kn.startFragment;
+            nd.lane = kn.lane;
+            nd.holds = kn.holds;
+            gameNotes.push_back(nd);
+          }
+        }
         
-        // 載入音樂
-        musicManager->loadMusic(chartParser->getMusicFile());
+        std::cout << "[INFO] Loaded " << gameNotes.size() << " notes (out of " 
+                  << keyNotes.size() << " total) for " << LANES << " lanes" << std::endl;
+        
+        // 初始化遊戲並使用譜面音符
+        new (game) Game(LANES, FRAGMENTS, MS_PER_FRAGMENT);
+        game->notes = gameNotes;
+        
       } else {
-        std::cerr << "[ERROR] Failed to load chart" << std::endl;
+        std::cout << "\n[INFO] Initializing game with random notes..." << std::endl;
+        
+        // 沒有譜面，使用原本的隨機生成
+        new (game) Game(LANES, FRAGMENTS, MS_PER_FRAGMENT);
+        game->notes = generateRandomNotes(LANES, 500, 500, 70);
       }
+      
+      // 初始化 Renderer
+      new (gameRenderer) Renderer(*game, SCREEN_WIDTH, SCREEN_HEIGHT, renderer,
+                                  large_font, medium_font, small_font);
+
+      // 執行 MOD 的設定函數（如果有的話）
+      SettingsFunc modSettingsFunc = mystd::get<2>(getModMap()[MOD]);
+      if (modSettingsFunc) {
+        modSettingsFunc(renderer, small_font, SCREEN_WIDTH, SCREEN_HEIGHT);
+      }
+      
       currentState = GameState::COUNTDOWN;
       break;
+    }
 
-    case GameState::COUNTDOWN:
+    case GameState::COUNTDOWN: {
       showCountdown(renderer);
       gameStartTime = SDL_GetTicks();
       lastFragmentTime = gameStartTime;
-      musicManager->playMusic(0);  // 加這行：播放音樂一次
+      if (chartLoaded) {
+        musicManager->playMusic(0);  // 播放音樂一次
+      }
       currentState = GameState::GAME;
       break;
+    }
 
     case GameState::GAME: {
       game->clearExpiredEffects(currentTime - gameStartTime);
@@ -405,9 +471,10 @@ int main(int argc, char *argv[]) {
       break;
     }
 
-    case GameState::PAUSE:
+    case GameState::PAUSE: {
       showPauseMenu(renderer);
       break;
+    }
     }
 
     SDL_RenderPresent(renderer);

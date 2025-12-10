@@ -3,7 +3,7 @@
 # ========================================
 
 # Basic Information
-&bpm=120
+&bpm=103
 &offset=0
 &fragments=4
 &music=./music/test_music.mp3
