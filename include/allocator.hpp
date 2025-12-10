@@ -279,30 +279,30 @@ public:
 };
 
 template <class Alloc>
-static typename mystd::allocator_traits<Alloc>::pointer
-allocate(Alloc &a, typename mystd::allocator_traits<Alloc>::size_type n) {
-  return mystd::allocator_traits<Alloc>::allocate(a, n);
+static typename allocator_traits<Alloc>::pointer
+allocate(Alloc &a, typename allocator_traits<Alloc>::size_type n) {
+  return allocator_traits<Alloc>::allocate(a, n);
 }
 
 template <class Alloc>
-static typename mystd::allocator_traits<Alloc>::pointer
-allocate(Alloc &a, typename mystd::allocator_traits<Alloc>::size_type n,
-         typename mystd::allocator_traits<Alloc>::const_void_pointer hint) {
-  return mystd::allocator_traits<Alloc>::allocate(a, n, hint);
+static typename allocator_traits<Alloc>::pointer
+allocate(Alloc &a, typename allocator_traits<Alloc>::size_type n,
+         typename allocator_traits<Alloc>::const_void_pointer hint) {
+  return allocator_traits<Alloc>::allocate(a, n, hint);
 }
 
 template <class Alloc>
 static constexpr void
-deallocate(Alloc &a, typename mystd::allocator_traits<Alloc>::pointer p,
-           typename mystd::allocator_traits<Alloc>::size_type n) {
-  mystd::allocator_traits<Alloc>::deallocate(a, p, n);
+deallocate(Alloc &a, typename allocator_traits<Alloc>::pointer p,
+           typename allocator_traits<Alloc>::size_type n) {
+  allocator_traits<Alloc>::deallocate(a, p, n);
 }
 
 struct allocator_arg_t {
   explicit allocator_arg_t() = default;
 };
 
-inline constexpr mystd::allocator_arg_t allocator_arg{};
+inline constexpr allocator_arg_t allocator_arg{};
 
 template <class T, class Alloc, class = void>
 struct uses_allocator : std::false_type {};
@@ -315,6 +315,12 @@ struct uses_allocator<T, Alloc, std::void_t<typename T::allocator_type>>
 template <class T, class Alloc>
 constexpr bool uses_allocator_v = uses_allocator<T, Alloc>::value;
 
+} // namespace mystd
+
+#include "tuple.hpp"
+
+namespace mystd {
+
 template <typename> struct is_pair : std::false_type {};
 
 template <typename T1, typename T2>
@@ -324,22 +330,22 @@ template <typename T> constexpr bool is_pair_v = is_pair<T>::value;
 
 template <class T, class Alloc, class... Args>
   requires(!is_pair_v<std::remove_cvref_t<T>>) &&
-          ((!mystd::uses_allocator_v<T, Alloc> &&
+          ((!uses_allocator_v<T, Alloc> &&
             std::is_constructible_v<T, Args...>) ||
-           std::is_constructible_v<T, std::allocator_arg_t, const Alloc &,
+           std::is_constructible_v<T, allocator_arg_t, const Alloc &,
                                    Args...> ||
            std::is_constructible_v<T, Args..., const Alloc &>)
 constexpr auto uses_allocator_construction_args(const Alloc &alloc,
                                                 Args &&...args) noexcept {
-  if constexpr (!mystd::uses_allocator_v<T, Alloc> &&
+  if constexpr (!uses_allocator_v<T, Alloc> &&
                 std::is_constructible_v<T, Args...>) {
-    return std::forward_as_tuple(std::forward<Args>(args)...);
-  } else if constexpr (std::is_constructible_v<T, std::allocator_arg_t,
+    return forward_as_tuple(std::forward<Args>(args)...);
+  } else if constexpr (std::is_constructible_v<T, allocator_arg_t,
                                                const Alloc &, Args...>) {
-    return std::tuple<std::allocator_arg_t, const Alloc &, Args &&...>(
+    return tuple<allocator_arg_t, const Alloc &, Args &&...>(
         std::allocator_arg, alloc, std::forward<Args>(args)...);
   } else {
-    return std::forward_as_tuple(std::forward<Args>(args)..., alloc);
+    return forward_as_tuple(std::forward<Args>(args)..., alloc);
   }
 }
 
@@ -348,7 +354,7 @@ template <class T, class Alloc, class Tuple1, class Tuple2>
 constexpr auto
 uses_allocator_construction_args(const Alloc &alloc, std::piecewise_construct_t,
                                  Tuple1 &&x, Tuple2 &&y) noexcept {
-  return std::make_tuple(
+  return make_tuple(
       std::piecewise_construct,
       std::apply(
           [&alloc](auto &&...args1) {
@@ -368,7 +374,7 @@ template <class T, class Alloc>
   requires is_pair_v<std::remove_cvref_t<T>>
 constexpr auto uses_allocator_construction_args(const Alloc &alloc) noexcept {
   return uses_allocator_construction_args<T>(alloc, std::piecewise_construct,
-                                             std::tuple<>{}, std::tuple<>{});
+                                             tuple<>{}, std::tuple<>{});
 }
 
 template <class T, class Alloc, class U, class V>
@@ -376,9 +382,8 @@ template <class T, class Alloc, class U, class V>
 constexpr auto uses_allocator_construction_args(const Alloc &alloc, U &&u,
                                                 V &&v) noexcept {
   return uses_allocator_construction_args<T>(
-      alloc, std::piecewise_construct,
-      std::forward_as_tuple(std::forward<U>(u)),
-      std::forward_as_tuple(std::forward<V>(v)));
+      alloc, std::piecewise_construct, forward_as_tuple(std::forward<U>(u)),
+      forward_as_tuple(std::forward<V>(v)));
 }
 
 template <class T, class Alloc, class U, class V>
@@ -387,8 +392,8 @@ constexpr auto
 uses_allocator_construction_args(const Alloc &alloc,
                                  const std::pair<U, V> &pr) noexcept {
   return uses_allocator_construction_args<T>(alloc, std::piecewise_construct,
-                                             std::forward_as_tuple(pr.first),
-                                             std::forward_as_tuple(pr.second));
+                                             forward_as_tuple(pr.first),
+                                             forward_as_tuple(pr.second));
 }
 
 template <class T, class Alloc, class U, class V>
@@ -397,8 +402,8 @@ constexpr auto uses_allocator_construction_args(const Alloc &alloc,
                                                 std::pair<U, V> &&pr) noexcept {
   return uses_allocator_construction_args<T>(
       alloc, std::piecewise_construct,
-      std::forward_as_tuple(std::forward<U>(pr.first)),
-      std::forward_as_tuple(std::forward<V>(pr.second)));
+      forward_as_tuple(std::forward<U>(pr.first)),
+      forward_as_tuple(std::forward<V>(pr.second)));
 }
 
 template <class T, class Alloc, class NonPair>
@@ -423,13 +428,13 @@ constexpr auto uses_allocator_construction_args(const Alloc &alloc,
     }
   };
   pair_constructor construction{alloc, np};
-  return std::make_tuple(construction);
+  return make_tuple(construction);
 }
 
 template <class T, class Alloc, class... Args>
 constexpr T make_obj_using_allocator(const Alloc &alloc, Args &&...args) {
-  return std::make_from_tuple<T>(mystd::uses_allocator_construction_args<T>(
-      alloc, std::forward<Args>(args)...));
+  return make_from_tuple<T>(
+      uses_allocator_construction_args<T>(alloc, std::forward<Args>(args)...));
 }
 
 template <class T, class Alloc, class... Args>
@@ -439,8 +444,7 @@ constexpr T *uninitialized_construct_using_allocator(T *p, const Alloc &alloc,
       [&]<class... Xs>(Xs &&...xs) {
         return std::construct_at(p, std::forward<Xs>(xs)...);
       },
-      mystd::uses_allocator_construction_args<T>(alloc,
-                                                 std::forward<Args>(args)...));
+      uses_allocator_construction_args<T>(alloc, std::forward<Args>(args)...));
 }
 
 } // namespace mystd
