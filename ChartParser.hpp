@@ -17,8 +17,8 @@
 // 滑鼠物件結構（同學B使用）
 struct MouseNoteData {
     std::size_t startFragment;
-    std::size_t lane;    // 軌道編號 (0-3)
-    int type;            // 0=GREEN(拾取), 1=RED(躲避)
+    std::size_t lane;       // 軌道編號 (0-3)
+    int type;               // 0=GREEN(拾取), 1=RED(躲避)
 };
 
 class ChartParser {
@@ -155,12 +155,25 @@ private:
     }
     
     void parseMouseNoteToken(const std::string& token, std::size_t fragment) {
-        char type = token[0];
-        
-        if (type == 'G' || type == 'R') {
-            int lane = std::stoi(token.substr(1)) - 1;
-            int noteType = (type == 'G') ? 0 : 1;
-            mouseNotes.push_back({fragment, static_cast<std::size_t>(lane), noteType});
+        if (token.length() >= 2) {
+            char type = token[0];
+            
+            if (type == 'G' || type == 'R') {
+                try {
+                    int lane = std::stoi(token.substr(1)) - 1;
+                    int noteType = (type == 'G') ? 0 : 1;
+                    
+                    if (lane >= 0 && lane < 4) { // 假設 LANES = 4
+                        mouseNotes.push_back({fragment, static_cast<std::size_t>(lane), noteType});
+                    } else {
+                        // 警告訊息
+                        std::cerr << "[WARNING] Mouse Note lane out of bounds: " << (lane + 1) << " at fragment " << fragment << std::endl;
+                    }
+                } catch (const std::invalid_argument& e) {
+                    // 警告訊息
+                    std::cerr << "[WARNING] Invalid Mouse Note format (non-numeric lane): " << token << " at fragment " << fragment << std::endl;
+                }
+            }
         }
     }
 
@@ -207,8 +220,8 @@ public:
             [](const MouseNoteData& a, const MouseNoteData& b) { return a.startFragment < b.startFragment; });
         
         std::cout << "[OK] Chart loaded: " << filepath << std::endl;
-        std::cout << "     BPM=" << bpm << ", Fragments/Beat=" << fragmentsPerBeat << std::endl;
-        std::cout << "     Key notes=" << keyNotes.size() << ", Mouse notes=" << mouseNotes.size() << std::endl;
+        std::cout << "      BPM=" << bpm << ", Fragments/Beat=" << fragmentsPerBeat << std::endl;
+        std::cout << "      Key notes=" << keyNotes.size() << ", Mouse notes=" << mouseNotes.size() << std::endl;
         
         return true;
     }
@@ -256,8 +269,8 @@ public:
             for (size_t i = 0; i < std::min(size_t(5), mouseNotes.size()); i++) {
                 const auto& m = mouseNotes[i];
                 std::cout << m.startFragment << "\t\t" << m.lane << "\t" 
-                         << (m.type == 0 ? "GREEN" : "RED") << "\t" 
-                         << getFragmentTime(m.startFragment) << std::endl;
+                          << (m.type == 0 ? "GREEN" : "RED") << "\t" 
+                          << getFragmentTime(m.startFragment) << std::endl;
             }
             if (mouseNotes.size() > 5) {
                 std::cout << "... (showing first 5 of " << mouseNotes.size() << ")" << std::endl;
