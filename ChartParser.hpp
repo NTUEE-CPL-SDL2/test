@@ -51,20 +51,14 @@ private:
         }
     }
     
-    // 不使用 seekg，改用返回下一行的方式
-    std::string parseKeyNotes(std::ifstream& file) {
+    void parseKeyNotes(std::ifstream& file) {
         std::string line;
         int currentDensity = 4;
         std::size_t currentFragment = 0;
         
         while (std::getline(file, line)) {
             line = trim(line);
-            
-            // 遇到下一個區塊標籤時，返回該標籤
-            if (!line.empty() && line[0] == '&') {
-                return line;
-            }
-            
+            if (line.find("&") == 0) break;
             if (line.empty() || line[0] == '#') continue;
             
             if (line[0] == '{' && line.back() == '}') {
@@ -74,7 +68,6 @@ private:
             
             parseKeyNoteLine(line, currentDensity, currentFragment);
         }
-        return "";
     }
     
     void parseKeyNoteLine(const std::string& line, int density, std::size_t& currentFragment) {
@@ -120,41 +113,23 @@ private:
         }
     }
     
-    // 不使用 seekg，改用返回下一行的方式
-    std::string parseMouseNotes(std::ifstream& file) {
-        std::cout << "[DEBUG] Entering parseMouseNotes()" << std::endl;
+    void parseMouseNotes(std::ifstream& file) {
         std::string line;
         int currentDensity = 4;
         std::size_t currentFragment = 0;
-        int lineCount = 0;
         
         while (std::getline(file, line)) {
             line = trim(line);
-            lineCount++;
-            std::cout << "[DEBUG] Mouse line " << lineCount << ": '" << line << "'" << std::endl;
-            
-            // 遇到下一個區塊標籤時，返回該標籤
-            if (!line.empty() && line[0] == '&') {
-                std::cout << "[DEBUG] Found next section tag: " << line << std::endl;
-                return line;
-            }
-            
-            if (line.empty() || line[0] == '#') {
-                std::cout << "[DEBUG] Skipping empty/comment line" << std::endl;
-                continue;
-            }
+            if (line.find("&") == 0) break;
+            if (line.empty() || line[0] == '#') continue;
             
             if (line[0] == '{' && line.back() == '}') {
                 currentDensity = std::stoi(line.substr(1, line.length() - 2));
-                std::cout << "[DEBUG] Density changed to: " << currentDensity << std::endl;
                 continue;
             }
             
-            std::cout << "[DEBUG] Parsing mouse note line" << std::endl;
             parseMouseNoteLine(line, currentDensity, currentFragment);
         }
-        std::cout << "[DEBUG] Reached end of file, total mouse notes: " << mouseNotes.size() << std::endl;
-        return "";
     }
     
     void parseMouseNoteLine(const std::string& line, int density, std::size_t& currentFragment) {
@@ -165,7 +140,6 @@ private:
         while (std::getline(ss, token, ',')) {
             token = trim(token);
             if (!token.empty()) {
-                std::cout << "[DEBUG] Mouse token: '" << token << "' at fragment " << currentFragment << std::endl;
                 parseMouseNoteToken(token, currentFragment);
             }
             currentFragment += fragmentsPerGrid;
@@ -180,10 +154,6 @@ private:
             int lane = std::stoi(token.substr(1)) - 1;  // 1-4 轉成 0-3
             int noteType = (type == 'G') ? 0 : 1;
             mouseNotes.push_back({fragment, static_cast<std::size_t>(lane), noteType});
-            std::cout << "[DEBUG] Added mouse note: type=" << (noteType == 0 ? "GREEN" : "RED") 
-                      << " lane=" << lane << " fragment=" << fragment << std::endl;
-        } else {
-            std::cout << "[DEBUG] Invalid mouse token type: " << type << std::endl;
         }
     }
 
@@ -198,31 +168,17 @@ public:
         }
         
         std::string line;
-        std::string nextLine = "";
-        
-        while (true) {
-            // 如果有緩存的下一行，使用它；否則從檔案讀取
-            if (!nextLine.empty()) {
-                line = nextLine;
-                nextLine = "";
-            } else {
-                if (!std::getline(file, line)) break;
-            }
-            
+        while (std::getline(file, line)) {
             line = trim(line);
-            std::cout << "[DEBUG] Main loop reading: '" << line << "'" << std::endl;
-            
             if (line.empty() || line[0] == '#') continue;
             
             if (line.find("&bpm=") == 0 || line.find("&offset=") == 0 || 
                 line.find("&music=") == 0 || line.find("&fragments=") == 0) {
                 parseMetadata(line);
             } else if (line == "&keynotes=") {
-                std::cout << "[DEBUG] Found &keynotes= tag" << std::endl;
-                nextLine = parseKeyNotes(file);
+                parseKeyNotes(file);
             } else if (line == "&mousenotes=") {
-                std::cout << "[DEBUG] Found &mousenotes= tag" << std::endl;
-                nextLine = parseMouseNotes(file);
+                parseMouseNotes(file);
             }
         }
         
