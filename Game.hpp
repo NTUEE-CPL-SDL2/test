@@ -64,7 +64,6 @@ public:
   mystd::vector<Effect> laneEffects;
   game_priority_queue<Effect> centerEffects = game_priority_queue<Effect>();
 
-public:
   Game(std::size_t lanes_, std::size_t fragments_, uint32_t mpf, mystd::vector<KeyNoteData>& keynotes)
       : lanes(lanes_), fragments(fragments_), msPerFragment(mpf), notes(keynotes) {
     highway.reserve(lanes);
