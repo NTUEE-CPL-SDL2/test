@@ -9,546 +9,643 @@
 #include <string>
 #include <tuple>
 #include <unordered_map>
+#include <algorithm> 
+#include <vector> ? ?
 
 #include "include/tuple.hpp"
 
 #include "Game.hpp"
+#include "ChartParser.hpp" 
+
+extern const std::vector<MouseNoteData>* mouseNotesPtr; 
+extern ChartParser *chartParser; 
+extern uint32_t MS_PER_FRAGMENT;
+
+extern const uint32_t NO_LANE_EFFECT; 
+extern const uint32_t PERFECT;
+extern const uint32_t GREAT;
+extern const uint32_t GOOD;
+extern const uint32_t BAD;
+extern const uint32_t MISS;
+extern const uint32_t HOLD_RELEASED;
+extern const uint32_t COMBO;
+extern const uint32_t SCORE;
+
 
 enum Alignment : uint8_t { ALIGN_LEFT, ALIGN_CENTER, ALIGN_RIGHT };
 
 struct NotesCacheHash {
-  std::size_t operator()(const mystd::tuple<int8_t, bool, uint32_t> &t) const {
-    auto hash1 = std::hash<int8_t>{}(mystd::get<0>(t));
-    auto hash2 = std::hash<bool>{}(mystd::get<1>(t));
-    auto hash3 = std::hash<uint32_t>{}(mystd::get<2>(t));
-    return hash1 ^ (hash2 << 1) ^ (hash3 << 2);
-  }
+? std::size_t operator()(const mystd::tuple<int8_t, bool, uint32_t> &t) const {
+? ? auto hash1 = std::hash<int8_t>{}(mystd::get<0>(t));
+? ? auto hash2 = std::hash<bool>{}(mystd::get<1>(t));
+? ? auto hash3 = std::hash<uint32_t>{}(mystd::get<2>(t));
+? ? return hash1 ^ (hash2 << 1) ^ (hash3 << 2);
+? }
 };
 
 class Renderer {
 private:
-  Game &game;
-  std::unordered_map<mystd::tuple<int8_t, bool, uint32_t>, SDL_Texture *,
-                     NotesCacheHash>
-      notesTextureCache;
-  std::unordered_map<std::string, SDL_Texture *> textTextureCache;
-  std::unordered_map<std::string, SDL_Texture *> imageTextureCache;
+? Game &game;
+? std::unordered_map<mystd::tuple<int8_t, bool, uint32_t>, SDL_Texture *,
+? ? ? ? ? ? ? ? ? ? ?NotesCacheHash>
+? ? ? notesTextureCache;
+? std::unordered_map<std::string, SDL_Texture *> textTextureCache;
+? std::unordered_map<std::string, SDL_Texture *> imageTextureCache;
 
-  int screenW;
-  int screenH;
-  int laneWidth;
-  int fragmentHeight;
+? int screenW;
+? int screenH;
+? int laneWidth;
+? int fragmentHeight;
 
-  TTF_Font *large_font;
-  TTF_Font *medium_font;
-  TTF_Font *small_font;
+? TTF_Font *large_font;
+? TTF_Font *medium_font;
+? TTF_Font *small_font;
 
-  SDL_Renderer *sdl_renderer;
+? SDL_Renderer *sdl_renderer;
+
+? SDL_Texture *getMouseNoteTexture(int type) {
+? ? std::string path;
+? ? if (type == 0) {
+? ? ? ? path = "res/img/MouseNote_GREEN.png";
+? ? } else {
+? ? ? ? path = "res/img/MouseNote_RED.png";
+? ? }
+
+? ? auto it = imageTextureCache.find(path);
+? ? if (it != imageTextureCache.end()) {
+? ? ? ? return it->second;
+? ? }
+
+? ? SDL_Texture *texture = loadImageTexture(path.c_str());
+? ? if (texture) {
+? ? ? ? imageTextureCache[path] = texture;
+? ? }
+? ? return texture;
+? }
+? 
+? void drawMouseNotes(SDL_Renderer *rnd, uint32_t nowMs) {
+? ? if (!mouseNotesPtr || mouseNotesPtr->empty() || !chartParser || MS_PER_FRAGMENT == 0) {
+? ? ? ? return;
+? ? }
+
+? ? const double visibleTime = (double)game.fragments * (double)MS_PER_FRAGMENT; 
+? ? const int hitLineY = screenH - fragmentHeight; 
+? ? const int highwayLength = screenH - fragmentHeight; 
+
+? ? // >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> 【圖片大小/位置修改點 A：滑鼠音符大小】
+? ? // 原始設定：與 KeyNote 相同大小
+? ? const double scaleFactorW = 1.0; // 調整寬度縮放比例 (例如：0.8 為 80%)
+? ? const double scaleFactorH = 1.0; // 調整高度縮放比例 (例如：1.2 為 120%)
+? ? const int baseNoteWidth = laneWidth;
+? ? const int baseNoteHeight = fragmentHeight;
+? ? // <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< 【圖片大小/位置修改點 A：滑鼠音符大小】
+
+
+? ? for (const auto &note : *mouseNotesPtr) {
+? ? ? ? const double noteTimeMs = chartParser->getFragmentTime(note.startFragment);
+? ? ? ? const double dt = noteTimeMs - (double)nowMs;
+
+? ? ? ? if (dt < -(double)MS_PER_FRAGMENT || dt > visibleTime * 1.05) {
+? ? ? ? ? ? continue;
+? ? ? ? }
+
+? ? ? ? const double relativePos = dt / visibleTime;
+? ? ? ? const int noteYCenter = (int)std::round((double)hitLineY - ((double)highwayLength * relativePos));
+? ? ? ? 
+? ? ? ? // 套用自定義大小
+? ? ? ? const int noteWidth = (int)std::round(baseNoteWidth * scaleFactorW);
+? ? ? ? const int noteHeight = (int)std::round(baseNoteHeight * scaleFactorH); 
+
+? ? ? ? // 計算 X 座標 (中心對齊在指定 Lane)
+? ? ? ? const int laneCenterX = note.lane * laneWidth + laneWidth / 2;
+? ? ? ? 
+? ? ? ? SDL_Rect destRect;
+? ? ? ? 
+? ? ? ? // >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> 【圖片大小/位置修改點 B：滑鼠音符位置】
+? ? ? ? // destRect.x 和 destRect.y 決定音符的左上角位置
+? ? ? ? const int offsetX = 0; // X 軸偏移量 (正值向右，負值向左)
+? ? ? ? const int offsetY = 0; // Y 軸偏移量 (正值向下，負值向上)
+
+? ? ? ? destRect.x = laneCenterX - noteWidth / 2 + offsetX;
+? ? ? ? destRect.y = noteYCenter - noteHeight / 2 + offsetY;
+? ? ? ? // <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< 【圖片大小/位置修改點 B：滑鼠音符位置】
+
+? ? ? ? destRect.w = noteWidth;
+? ? ? ? destRect.h = noteHeight;
+
+? ? ? ? SDL_Texture *texture = getMouseNoteTexture(note.type);
+
+? ? ? ? if (!texture) {
+? ? ? ? ? ? SDL_SetRenderDrawColor(rnd, (note.type == 0 ? 0 : 255), (note.type == 0 ? 255 : 0), 0, 255); 
+? ? ? ? ? ? SDL_RenderFillRect(rnd, &destRect);
+? ? ? ? } else {
+? ? ? ? ? ? SDL_RenderCopy(rnd, texture, nullptr, &destRect);
+? ? ? ? }
+? ? }
+? }
 
 public:
-  float fps;
+? float fps;
 
-  Renderer(Game &game_, int screenW_, int screenH_, SDL_Renderer *renderer,
-           TTF_Font *large_font_, TTF_Font *medium_font_, TTF_Font *small_font_)
-      : game(game_), screenW(screenW_), screenH(screenH_),
-        sdl_renderer(renderer), large_font(large_font_),
-        medium_font(medium_font_), small_font(small_font_), fps(0) {
-    laneWidth = screenW / game.lanes;
-    fragmentHeight = screenH / game.fragments;
+? Renderer(Game &game_, int screenW_, int screenH_, SDL_Renderer *renderer,
+? ? ? ? ? ?TTF_Font *large_font_, TTF_Font *medium_font_, TTF_Font *small_font_)
+? ? ? : game(game_), screenW(screenW_), screenH(screenH_),
+? ? ? ? sdl_renderer(renderer), large_font(large_font_),
+? ? ? ? medium_font(medium_font_), small_font(small_font_), fps(0) {
+? ? laneWidth = screenW / game.lanes;
+? ? fragmentHeight = screenH / game.fragments;
 
-    loadEffectImages();
-  }
+? ? loadEffectImages();
+? }
 
-  ~Renderer() { clearCache(); }
+? ~Renderer() { clearCache(); }
 
-  void render(SDL_Renderer *rnd, uint32_t offsetMs) {
-    SDL_SetRenderDrawColor(rnd, 80, 80, 180, 80);
-    SDL_RenderClear(rnd);
+? void render(SDL_Renderer *rnd, uint32_t offsetMs) {
+? ? SDL_SetRenderDrawColor(rnd, 80, 80, 180, 80);
+? ? SDL_RenderClear(rnd);
 
-    // Draw game field
-    SDL_SetRenderDrawColor(rnd, 100, 100, 100, 255);
-    for (std::size_t lane = 1; lane < game.lanes; ++lane) {
-      int x = lane * laneWidth;
-      SDL_RenderDrawLine(rnd, x, 0, x, screenH);
-    }
+? ? SDL_SetRenderDrawColor(rnd, 100, 100, 100, 255);
+? ? for (std::size_t lane = 1; lane < game.lanes; ++lane) {
+? ? ? int x = lane * laneWidth;
+? ? ? SDL_RenderDrawLine(rnd, x, 0, x, screenH);
+? ? }
 
-    SDL_SetRenderDrawColor(rnd, 60, 60, 60, 255);
-    for (std::size_t fragment = 1; fragment < game.fragments; ++fragment) {
-      int y = fragment * fragmentHeight;
-      SDL_RenderDrawLine(rnd, 0, y, screenW, y);
-    }
+? ? SDL_SetRenderDrawColor(rnd, 60, 60, 60, 255);
+? ? for (std::size_t fragment = 1; fragment < game.fragments; ++fragment) {
+? ? ? int y = fragment * fragmentHeight;
+? ? ? SDL_RenderDrawLine(rnd, 0, y, screenW, y);
+? ? }
 
-    // Render notes
-    for (std::size_t lane = 0; lane < game.lanes; ++lane) {
-      bool lanePressed = game.lanePressed[lane];
+? ? for (std::size_t lane = 0; lane < game.lanes; ++lane) {
+? ? ? bool lanePressed = game.lanePressed[lane];
 
-      for (std::size_t fragmentIdx = 0; fragmentIdx < game.fragments;
-           ++fragmentIdx) {
-        int8_t fragmentValue = game.highway[lane][fragmentIdx];
-        uint32_t holdTime = 0;
+? ? ? for (std::size_t fragmentIdx = 0; fragmentIdx < game.fragments;
+? ? ? ? ? ?++fragmentIdx) {
+? ? ? ? int8_t fragmentValue = game.highway[lane][fragmentIdx];
+? ? ? ? uint32_t holdTime = 0;
 
-        if (fragmentIdx == game.fragments - 1 && fragmentValue > 0 &&
-            lanePressed) {
-          holdTime = game.holdPressedTime[lane];
-        }
+? ? ? ? if (fragmentIdx == game.fragments - 1 && fragmentValue > 0 &&
+? ? ? ? ? ? lanePressed) {
+? ? ? ? ? holdTime = game.holdPressedTime[lane];
+? ? ? ? }
 
-        auto key = mystd::make_tuple(
-            fragmentValue, lanePressed && fragmentIdx == game.fragments - 1,
-            holdTime);
+? ? ? ? auto key = mystd::make_tuple(
+? ? ? ? ? ? fragmentValue, lanePressed && fragmentIdx == game.fragments - 1,
+? ? ? ? ? ? holdTime);
 
-        auto it = notesTextureCache.find(key);
-        SDL_Texture *texture;
+? ? ? ? auto it = notesTextureCache.find(key);
+? ? ? ? SDL_Texture *texture;
 
-        if (it == notesTextureCache.end()) {
-          texture = createFragmentTexture(
-              rnd, fragmentValue,
-              lanePressed && fragmentIdx == game.fragments - 1, holdTime);
-          notesTextureCache[key] = texture;
-        } else {
-          texture = it->second;
-        }
+? ? ? ? if (it == notesTextureCache.end()) {
+? ? ? ? ? texture = createFragmentTexture(
+? ? ? ? ? ? ? rnd, fragmentValue,
+? ? ? ? ? ? ? lanePressed && fragmentIdx == game.fragments - 1, holdTime);
+? ? ? ? ? notesTextureCache[key] = texture;
+? ? ? ? } else {
+? ? ? ? ? texture = it->second;
+? ? ? ? }
 
-        SDL_Rect destRect;
-        destRect.x = lane * laneWidth;
-        double progress = (double)offsetMs / (double)game.msPerFragment;
-        if (progress > 1.0)
-          progress = 1.0;
-        double smoothY = (fragmentIdx + progress) * fragmentHeight;
+? ? ? ? SDL_Rect destRect;
+? ? ? ? destRect.x = lane * laneWidth;
+? ? ? ? double progress = (double)offsetMs / (double)game.msPerFragment;
+? ? ? ? if (progress > 1.0)
+? ? ? ? ? progress = 1.0;
+? ? ? ? double smoothY = (fragmentIdx + progress) * fragmentHeight;
 
-        destRect.y = (int)smoothY;
+? ? ? ? destRect.y = (int)smoothY;
 
-        destRect.w = laneWidth;
-        destRect.h = fragmentHeight;
+? ? ? ? destRect.w = laneWidth;
+? ? ? ? destRect.h = fragmentHeight;
 
-        SDL_RenderCopy(rnd, texture, nullptr, &destRect);
-      }
+? ? ? ? SDL_RenderCopy(rnd, texture, nullptr, &destRect);
+? ? ? }
 
-      // Draw lane key hints
-      int laneCenterX = lane * laneWidth + laneWidth / 2;
-      std::string keyHint;
-      switch (lane) {
-      case 0:
-        keyHint = "A";
-        break;
-      case 1:
-        keyHint = "S";
-        break;
-      case 2:
-        keyHint = "D";
-        break;
-      case 3:
-        keyHint = "F";
-        break;
-      case 4:
-        keyHint = "G";
-        break;
-      case 5:
-        keyHint = "H";
-        break;
-      case 6:
-        keyHint = "J";
-        break;
-      case 7:
-        keyHint = "K";
-        break;
-      case 8:
-        keyHint = "L";
-        break;
-      default:
-        keyHint = std::to_string(lane + 1);
-        break;
-      }
-      drawText(rnd, keyHint, laneCenterX, screenH - 30, small_font,
-               {200, 200, 200, 255}, ALIGN_CENTER);
-    }
+? ? ? int laneCenterX = lane * laneWidth + laneWidth / 2;
+? ? ? std::string keyHint;
+? ? ? switch (lane) {
+? ? ? case 0:
+? ? ? ? keyHint = "A";
+? ? ? ? break;
+? ? ? case 1:
+? ? ? ? keyHint = "S";
+? ? ? ? break;
+? ? ? case 2:
+? ? ? ? keyHint = "D";
+? ? ? ? break;
+? ? ? case 3:
+? ? ? ? keyHint = "F";
+? ? ? ? break;
+? ? ? case 4:
+? ? ? ? keyHint = "G";
+? ? ? ? break;
+? ? ? case 5:
+? ? ? ? keyHint = "H";
+? ? ? ? break;
+? ? ? case 6:
+? ? ? ? keyHint = "J";
+? ? ? ? break;
+? ? ? case 7:
+? ? ? ? keyHint = "K";
+? ? ? ? break;
+? ? ? case 8:
+? ? ? ? keyHint = "L";
+? ? ? ? break;
+? ? ? default:
+? ? ? ? keyHint = std::to_string(lane + 1);
+? ? ? ? break;
+? ? ? }
+? ? ? drawText(rnd, keyHint, laneCenterX, screenH - 30, small_font,
+? ? ? ? ? ? ? ?{200, 200, 200, 255}, ALIGN_CENTER);
+? ? }
 
-    // Draw judgement line
-    SDL_SetRenderDrawColor(rnd, 255, 255, 255, 255);
-    int judgmentLineY = screenH - fragmentHeight;
-    SDL_Rect judgmentLine = {0, judgmentLineY, screenW, 3};
-    SDL_RenderFillRect(rnd, &judgmentLine);
+? ? SDL_SetRenderDrawColor(rnd, 255, 255, 255, 255);
+? ? int judgmentLineY = screenH - fragmentHeight;
+? ? SDL_Rect judgmentLine = {0, judgmentLineY, screenW, 3};
+? ? SDL_RenderFillRect(rnd, &judgmentLine);
+? ? 
+? ? uint32_t nowMs = (game.nowFragment * game.msPerFragment) + offsetMs;
+? ? drawMouseNotes(rnd, nowMs);
 
-    // Draw score at top center
-    drawText(rnd, "Score: " + std::to_string(game.score), screenW / 2, 30,
-             medium_font, {255, 255, 255, 255}, ALIGN_CENTER);
 
-    // Draw stats on left
-    const int statsX = 20;
-    const int statsY = 30;
-    const int lineHeight = 40;
+? ? drawText(rnd, "Score: " + std::to_string(game.score), screenW / 2, 30,
+? ? ? ? ? ? ?medium_font, {255, 255, 255, 255}, ALIGN_CENTER);
 
-    drawText(rnd, "PERFECT: " + std::to_string(game.perfectCount), statsX,
-             statsY, small_font, {0, 255, 0, 255});
-    drawText(rnd, "GREAT: " + std::to_string(game.greatCount), statsX,
-             statsY + lineHeight, small_font, {0, 200, 100, 255});
-    drawText(rnd, "GOOD: " + std::to_string(game.goodCount), statsX,
-             statsY + lineHeight * 2, small_font, {200, 200, 0, 255});
-    drawText(rnd, "BAD: " + std::to_string(game.badCount), statsX,
-             statsY + lineHeight * 3, small_font, {255, 100, 0, 255});
-    drawText(rnd, "MISS: " + std::to_string(game.missCount), statsX,
-             statsY + lineHeight * 4, small_font, {255, 0, 0, 255});
-    drawText(rnd, "COMBO: " + std::to_string(game.combo), statsX,
-             statsY + lineHeight * 5, small_font, {255, 255, 255, 255});
-    drawText(rnd, "MAX COMBO: " + std::to_string(game.maxCombo), statsX,
-             statsY + lineHeight * 6, small_font, {255, 255, 255, 255});
-    drawText(rnd, "HELD TIME: " + std::to_string(game.heldTime) + " ms", statsX,
-             statsY + lineHeight * 7, small_font, {100, 255, 100, 255});
+? ? const int statsX = 20;
+? ? const int statsY = 30;
+? ? const int lineHeight = 40;
 
-    // Draw info on right
-    drawText(rnd, "Fragment: " + std::to_string(game.nowFragment), screenW - 20,
-             30, small_font, {200, 200, 200, 255}, ALIGN_RIGHT);
-    drawText(rnd, "FPS: " + std::to_string(fps), screenW - 20, 70, small_font,
-             {200, 200, 200, 255}, ALIGN_RIGHT);
+? ? drawText(rnd, "PERFECT: " + std::to_string(game.perfectCount), statsX,
+? ? ? ? ? ? ?statsY, small_font, {0, 255, 0, 255});
+? ? drawText(rnd, "GREAT: " + std::to_string(game.greatCount), statsX,
+? ? ? ? ? ? ?statsY + lineHeight, small_font, {0, 200, 100, 255});
+? ? drawText(rnd, "GOOD: " + std::to_string(game.goodCount), statsX,
+? ? ? ? ? ? ?statsY + lineHeight * 2, small_font, {200, 200, 0, 255});
+? ? drawText(rnd, "BAD: " + std::to_string(game.badCount), statsX,
+? ? ? ? ? ? ?statsY + lineHeight * 3, small_font, {255, 100, 0, 255});
+? ? drawText(rnd, "MISS: " + std::to_string(game.missCount), statsX,
+? ? ? ? ? ? ?statsY + lineHeight * 4, small_font, {255, 0, 0, 255});
+? ? drawText(rnd, "COMBO: " + std::to_string(game.combo), statsX,
+? ? ? ? ? ? ?statsY + lineHeight * 5, small_font, {255, 255, 255, 255});
+? ? drawText(rnd, "MAX COMBO: " + std::to_string(game.maxCombo), statsX,
+? ? ? ? ? ? ?statsY + lineHeight * 6, small_font, {255, 255, 255, 255});
+? ? drawText(rnd, "HELD TIME: " + std::to_string(game.heldTime) + " ms", statsX,
+? ? ? ? ? ? ?statsY + lineHeight * 7, small_font, {100, 255, 100, 255});
 
-    // Draw lane effects
-    for (std::size_t lane = 0; lane < game.lanes; ++lane) {
-      uint32_t effect = game.laneEffects[lane].content;
-      if (effect != NO_LANE_EFFECT) {
-        drawLaneEffect(rnd, lane, effect);
-      }
-    }
+? ? drawText(rnd, "Fragment: " + std::to_string(game.nowFragment), screenW - 20,
+? ? ? ? ? ? ?30, small_font, {200, 200, 200, 255}, ALIGN_RIGHT);
+? ? drawText(rnd, "FPS: " + std::to_string(fps), screenW - 20, 70, small_font,
+? ? ? ? ? ? ?{200, 200, 200, 255}, ALIGN_RIGHT);
 
-    // Draw center effects
-    for (std::size_t i = 0; i < game.centerEffects.size(); ++i) {
-      drawCenterEffect(rnd, game.centerEffects.c[i].content,
-                       game.centerEffects.c[i].num);
-    }
-  }
+? ? for (std::size_t lane = 0; lane < game.lanes; ++lane) {
+? ? ? uint32_t effect = game.laneEffects[lane].content;
+? ? ? if (effect != NO_LANE_EFFECT) {
+? ? ? ? drawLaneEffect(rnd, lane, effect);
+? ? ? }
+? ? }
 
-  void clearCache() {
-    for (auto &pair : notesTextureCache) {
-      SDL_DestroyTexture(pair.second);
-    }
-    notesTextureCache.clear();
+? ? for (std::size_t i = 0; i < game.centerEffects.size(); ++i) {
+? ? ? drawCenterEffect(rnd, game.centerEffects.c[i].content,
+? ? ? ? ? ? ? ? ? ? ? ?game.centerEffects.c[i].num);
+? ? }
+? }
 
-    for (auto &pair : textTextureCache) {
-      SDL_DestroyTexture(pair.second);
-    }
-    textTextureCache.clear();
+? void clearCache() {
+? ? for (auto &pair : notesTextureCache) {
+? ? ? SDL_DestroyTexture(pair.second);
+? ? }
+? ? notesTextureCache.clear();
 
-    for (auto &pair : imageTextureCache) {
-      SDL_DestroyTexture(pair.second);
-    }
-    imageTextureCache.clear();
-  }
+? ? for (auto &pair : textTextureCache) {
+? ? ? SDL_DestroyTexture(pair.second);
+? ? }
+? ? textTextureCache.clear();
 
-  void updateDimension(int screenW_, int screenH_) {
-    if (screenW != screenW_ || screenH != screenH_) {
-      screenW = screenW_;
-      screenH = screenH_;
-      laneWidth = screenW / game.lanes;
-      fragmentHeight = screenH / game.fragments;
+? ? for (auto &pair : imageTextureCache) {
+? ? ? SDL_DestroyTexture(pair.second);
+? ? }
+? ? imageTextureCache.clear();
+? }
 
-      clearCache();
-      loadEffectImages();
-    }
-  }
+? void updateDimension(int screenW_, int screenH_) {
+? ? if (screenW != screenW_ || screenH != screenH_) {
+? ? ? screenW = screenW_;
+? ? ? screenH = screenH_;
+? ? ? laneWidth = screenW / game.lanes;
+? ? ? fragmentHeight = screenH / game.fragments;
+
+? ? ? clearCache();
+? ? ? loadEffectImages();
+? ? }
+? }
 
 private:
-  void loadEffectImages() {
-    const char *effectImages[] = {
-        "res/img/perfect.png", "res/img/great.png", "res/img/good.png",
-        "res/img/bad.png",     "res/img/miss.png",  "res/img/hold_released.png",
-        "res/img/combo.png",   "res/img/score.png"};
+? void loadEffectImages() {
+? ? const char *effectImages[] = {
+? ? ? ? "res/img/perfect.png", "res/img/great.png", "res/img/good.png",
+? ? ? ? "res/img/bad.png", ? ? "res/img/miss.png", ?"res/img/hold_released.png",
+? ? ? ? "res/img/combo.png", ? "res/img/score.png",
+? ? ? ? "res/img/MouseNote_GREEN.png", 
+? ? ? ? "res/img/MouseNote_RED.png" ? ?
+? ? ? ? };
 
-    for (const char *path : effectImages) {
-      std::string key = path;
-      SDL_Texture *texture = loadImageTexture(path);
-      if (texture) {
-        imageTextureCache[key] = texture;
-      }
-    }
-  }
+? ? for (const char *path : effectImages) {
+? ? ? std::string key = path;
+? ? ? SDL_Texture *texture = loadImageTexture(path);
+? ? ? if (texture) {
+? ? ? ? imageTextureCache[key] = texture;
+? ? ? }
+? ? }
+? }
 
-  SDL_Texture *loadImageTexture(const char *path) {
-    SDL_Texture *texture = IMG_LoadTexture(sdl_renderer, path);
-    if (!texture) {
-      std::cerr << "Failed to load image " << path << ": " << IMG_GetError()
-                << std::endl;
-      return nullptr;
-    }
+? SDL_Texture *loadImageTexture(const char *path) {
+? ? SDL_Texture *texture = IMG_LoadTexture(sdl_renderer, path);
+? ? if (!texture) {
+? ? ? std::cerr << "Failed to load image " << path << ": " << IMG_GetError()
+? ? ? ? ? ? ? ? << std::endl;
+? ? ? return nullptr;
+? ? }
 
-    int originalWidth, originalHeight;
-    SDL_QueryTexture(texture, nullptr, nullptr, &originalWidth,
-                     &originalHeight);
+? ? int originalWidth, originalHeight;
+? ? SDL_QueryTexture(texture, nullptr, nullptr, &originalWidth,
+? ? ? ? ? ? ? ? ? ? ?&originalHeight);
 
-    float scaleFactor = screenW / 1080.0f / game.lanes;
-    int targetWidth = static_cast<int>(originalWidth * scaleFactor * 0.5f);
-    int targetHeight = static_cast<int>(originalHeight * scaleFactor * 0.5f);
+? ? float scaleFactor = screenW / 1080.0f / game.lanes;
+? ? int targetWidth = static_cast<int>(originalWidth * scaleFactor * 0.5f);
+? ? int targetHeight = static_cast<int>(originalHeight * scaleFactor * 0.5f);
 
-    SDL_Texture *scaledTexture =
-        SDL_CreateTexture(sdl_renderer, SDL_PIXELFORMAT_RGBA8888,
-                          SDL_TEXTUREACCESS_TARGET, targetWidth, targetHeight);
-    if (!scaledTexture) {
-      std::cerr << "Failed to create scaled texture: " << SDL_GetError()
-                << std::endl;
-      SDL_DestroyTexture(texture);
-      return nullptr;
-    }
+? ? SDL_Texture *scaledTexture =
+? ? ? ? SDL_CreateTexture(sdl_renderer, SDL_PIXELFORMAT_RGBA8888,
+? ? ? ? ? ? ? ? ? ? ? ? ? SDL_TEXTUREACCESS_TARGET, targetWidth, targetHeight);
+? ? if (!scaledTexture) {
+? ? ? std::cerr << "Failed to create scaled texture: " << SDL_GetError()
+? ? ? ? ? ? ? ? << std::endl;
+? ? ? SDL_DestroyTexture(texture);
+? ? ? return nullptr;
+? ? }
 
-    SDL_SetTextureBlendMode(scaledTexture, SDL_BLENDMODE_BLEND);
+? ? SDL_SetTextureBlendMode(scaledTexture, SDL_BLENDMODE_BLEND);
 
-    SDL_Texture *prevTarget = SDL_GetRenderTarget(sdl_renderer);
-    SDL_SetRenderTarget(sdl_renderer, scaledTexture);
+? ? SDL_Texture *prevTarget = SDL_GetRenderTarget(sdl_renderer);
+? ? SDL_SetRenderTarget(sdl_renderer, scaledTexture);
 
-    SDL_SetRenderDrawColor(sdl_renderer, 0, 0, 0, 0);
-    SDL_RenderClear(sdl_renderer);
+? ? SDL_SetRenderDrawColor(sdl_renderer, 0, 0, 0, 0);
+? ? SDL_RenderClear(sdl_renderer);
 
-    SDL_Rect destRect = {0, 0, targetWidth, targetHeight};
-    SDL_RenderCopy(sdl_renderer, texture, nullptr, &destRect);
+? ? SDL_Rect destRect = {0, 0, targetWidth, targetHeight};
+? ? SDL_RenderCopy(sdl_renderer, texture, nullptr, &destRect);
 
-    SDL_SetRenderTarget(sdl_renderer, prevTarget);
+? ? SDL_SetRenderTarget(sdl_renderer, prevTarget);
 
-    SDL_DestroyTexture(texture);
+? ? SDL_DestroyTexture(texture);
 
-    return scaledTexture;
-  }
+? ? return scaledTexture;
+? }
 
-  void drawLaneEffect(SDL_Renderer *rnd, std::size_t lane, uint32_t effect) {
-    std::string imagePath;
-    std::string effectText;
-    SDL_Color textColor = {255, 255, 255, 255};
+? void drawLaneEffect(SDL_Renderer *rnd, std::size_t lane, uint32_t effect) {
+? ? std::string imagePath;
+? ? std::string effectText;
+? ? SDL_Color textColor = {255, 255, 255, 255};
 
-    switch (effect) {
-    case PERFECT:
-      imagePath = "res/img/perfect.png";
-      effectText = "PERFECT!";
-      textColor = {0, 255, 0, 255};
-      break;
-    case GREAT:
-      imagePath = "res/img/great.png";
-      effectText = "GREAT!";
-      textColor = {0, 200, 100, 255};
-      break;
-    case GOOD:
-      imagePath = "res/img/good.png";
-      effectText = "GOOD";
-      textColor = {200, 200, 0, 255};
-      break;
-    case BAD:
-      imagePath = "res/img/bad.png";
-      effectText = "BAD";
-      textColor = {255, 100, 0, 255};
-      break;
-    case MISS:
-      imagePath = "res/img/miss.png";
-      effectText = "MISS";
-      textColor = {255, 0, 0, 255};
-      break;
-    case HOLD_RELEASED:
-      imagePath = "res/img/hold_released.png";
-      effectText = "HOLD";
-      textColor = {100, 255, 100, 255};
-      break;
-    default:
-      return;
-    }
+? ? switch (effect) {
+? ? case PERFECT:
+? ? ? imagePath = "res/img/perfect.png";
+? ? ? effectText = "PERFECT!";
+? ? ? textColor = {0, 255, 0, 255};
+? ? ? break;
+? ? case GREAT:
+? ? ? imagePath = "res/img/great.png";
+? ? ? effectText = "GREAT!";
+? ? ? textColor = {0, 200, 100, 255};
+? ? ? break;
+? ? case GOOD:
+? ? ? imagePath = "res/img/good.png";
+? ? ? effectText = "GOOD";
+? ? ? textColor = {200, 200, 0, 255};
+? ? ? break;
+? ? case BAD:
+? ? ? imagePath = "res/img/bad.png";
+? ? ? effectText = "BAD";
+? ? ? textColor = {255, 100, 0, 255};
+? ? ? break;
+? ? case MISS:
+? ? ? imagePath = "res/img/miss.png";
+? ? ? effectText = "MISS";
+? ? ? textColor = {255, 0, 0, 255};
+? ? ? break;
+? ? case HOLD_RELEASED:
+? ? ? imagePath = "res/img/hold_released.png";
+? ? ? effectText = "HOLD";
+? ? ? textColor = {100, 255, 100, 255};
+? ? ? break;
+? ? default:
+? ? ? return;
+? ? }
 
-    auto it = imageTextureCache.find(imagePath);
-    SDL_Texture *imageTexture = nullptr;
+? ? auto it = imageTextureCache.find(imagePath);
+? ? SDL_Texture *imageTexture = nullptr;
 
-    if (it == imageTextureCache.end()) {
-      imageTexture = loadImageTexture(imagePath.c_str());
-      if (imageTexture) {
-        imageTextureCache[imagePath] = imageTexture;
-      }
-    } else {
-      imageTexture = it->second;
-    }
+? ? if (it == imageTextureCache.end()) {
+? ? ? imageTexture = loadImageTexture(imagePath.c_str());
+? ? ? if (imageTexture) {
+? ? ? ? imageTextureCache[imagePath] = imageTexture;
+? ? ? }
+? ? } else {
+? ? ? imageTexture = it->second;
+? ? }
 
-    if (!imageTexture)
-      return;
+? ? if (!imageTexture)
+? ? ? return;
 
-    int effectWidth, effectHeight;
-    SDL_QueryTexture(imageTexture, nullptr, nullptr, &effectWidth,
-                     &effectHeight);
+? ? int effectWidth, effectHeight;
+? ? SDL_QueryTexture(imageTexture, nullptr, nullptr, &effectWidth,
+? ? ? ? ? ? ? ? ? ? ?&effectHeight);
 
-    int laneCenterX = lane * laneWidth + laneWidth / 2;
-    int effectY = fragmentHeight * game.fragments * 2 / 3;
+? ? int laneCenterX = lane * laneWidth + laneWidth / 2;
+? ? int effectY = fragmentHeight * game.fragments * 2 / 3;
 
-    SDL_Rect destRect = {laneCenterX - effectWidth / 2,
-                         effectY - effectHeight / 2, effectWidth, effectHeight};
+? ? SDL_Rect destRect = {laneCenterX - effectWidth / 2,
+? ? ? ? ? ? ? ? ? ? ? ? ?effectY - effectHeight / 2, effectWidth, effectHeight};
 
-    SDL_RenderCopy(rnd, imageTexture, nullptr, &destRect);
+? ? SDL_RenderCopy(rnd, imageTexture, nullptr, &destRect);
 
-    drawText(rnd, effectText, laneCenterX, effectY + effectHeight / 2,
-             small_font, textColor, ALIGN_CENTER);
-  }
+? ? drawText(rnd, effectText, laneCenterX, effectY + effectHeight / 2,
+? ? ? ? ? ? ?small_font, textColor, ALIGN_CENTER);
+? }
 
-  void drawCenterEffect(SDL_Renderer *rnd, uint32_t effect, uint32_t num) {
-    if (effect & COMBO) {
-      std::string imagePath = "res/img/combo.png";
-      std::string comboText = std::to_string(game.combo);
+? void drawCenterEffect(SDL_Renderer *rnd, uint32_t effect, uint32_t num) {
+? ? if (effect & COMBO) {
+? ? ? std::string imagePath = "res/img/combo.png";
+? ? ? std::string comboText = std::to_string(game.combo);
 
-      auto it = imageTextureCache.find(imagePath);
-      SDL_Texture *imageTexture = nullptr;
+? ? ? auto it = imageTextureCache.find(imagePath);
+? ? ? SDL_Texture *imageTexture = nullptr;
 
-      if (it == imageTextureCache.end()) {
-        imageTexture = loadImageTexture(imagePath.c_str());
-        if (imageTexture) {
-          imageTextureCache[imagePath] = imageTexture;
-        }
-      } else {
-        imageTexture = it->second;
-      }
+? ? ? if (it == imageTextureCache.end()) {
+? ? ? ? imageTexture = loadImageTexture(imagePath.c_str());
+? ? ? ? if (imageTexture) {
+? ? ? ? ? imageTextureCache[imagePath] = imageTexture;
+? ? ? ? }
+? ? ? } else {
+? ? ? ? imageTexture = it->second;
+? ? ? }
 
-      if (imageTexture) {
-        int effectWidth, effectHeight;
-        SDL_QueryTexture(imageTexture, nullptr, nullptr, &effectWidth,
-                         &effectHeight);
+? ? ? if (imageTexture) {
+? ? ? ? int effectWidth, effectHeight;
+? ? ? ? SDL_QueryTexture(imageTexture, nullptr, nullptr, &effectWidth,
+? ? ? ? ? ? ? ? ? ? ? ? ?&effectHeight);
 
-        effectWidth = static_cast<int>(effectWidth * 1.5f);
-        effectHeight = static_cast<int>(effectHeight * 1.5f);
+? ? ? ? effectWidth = static_cast<int>(effectWidth * 1.5f);
+? ? ? ? effectHeight = static_cast<int>(effectHeight * 1.5f);
 
-        SDL_Rect destRect = {screenW / 2 - effectWidth / 2,
-                             screenH / 3 - effectHeight / 2, effectWidth,
-                             effectHeight};
+? ? ? ? SDL_Rect destRect = {screenW / 2 - effectWidth / 2,
+? ? ? ? ? ? ? ? ? ? ? ? ? ? ?screenH / 3 - effectHeight / 2, effectWidth,
+? ? ? ? ? ? ? ? ? ? ? ? ? ? ?effectHeight};
 
-        SDL_RenderCopy(rnd, imageTexture, nullptr, &destRect);
+? ? ? ? SDL_RenderCopy(rnd, imageTexture, nullptr, &destRect);
 
-        SDL_Color comboColor = game.combo >= 50 ? SDL_Color{255, 215, 0, 255}
-                               : game.combo >= 20
-                                   ? SDL_Color{255, 100, 255, 255}
-                                   : SDL_Color{255, 255, 255, 255};
+? ? ? ? SDL_Color comboColor = game.combo >= 50 ? SDL_Color{255, 215, 0, 255}
+? ? ? ? ? ? ? ? ? ? ? ? ? ? ? ?: game.combo >= 20
+? ? ? ? ? ? ? ? ? ? ? ? ? ? ? ? ? ?? SDL_Color{255, 100, 255, 255}
+? ? ? ? ? ? ? ? ? ? ? ? ? ? ? ? ? ?: SDL_Color{255, 255, 255, 255};
 
-        drawText(rnd, comboText, screenW / 2, screenH / 3, large_font,
-                 comboColor, ALIGN_CENTER);
-        drawText(rnd, "COMBO: " + std::to_string(num), screenW / 2,
-                 screenH / 3 + 80, medium_font, comboColor, ALIGN_CENTER);
-      }
-    }
+? ? ? ? drawText(rnd, comboText, screenW / 2, screenH / 3, large_font,
+? ? ? ? ? ? ? ? ?comboColor, ALIGN_CENTER);
+? ? ? ? drawText(rnd, "COMBO: " + std::to_string(num), screenW / 2,
+? ? ? ? ? ? ? ? ?screenH / 3 + 80, medium_font, comboColor, ALIGN_CENTER);
+? ? ? }
+? ? }
 
-    if (effect & SCORE) {
-      std::string imagePath = "res/img/score.png";
+? ? if (effect & SCORE) {
+? ? ? std::string imagePath = "res/img/score.png";
 
-      auto it = imageTextureCache.find(imagePath);
-      SDL_Texture *imageTexture = nullptr;
+? ? ? auto it = imageTextureCache.find(imagePath);
+? ? ? SDL_Texture *imageTexture = nullptr;
 
-      if (it == imageTextureCache.end()) {
-        imageTexture = loadImageTexture(imagePath.c_str());
-        if (imageTexture) {
-          imageTextureCache[imagePath] = imageTexture;
-        }
-      } else {
-        imageTexture = it->second;
-      }
+? ? ? if (it == imageTextureCache.end()) {
+? ? ? ? imageTexture = loadImageTexture(imagePath.c_str());
+? ? ? ? if (imageTexture) {
+? ? ? ? ? imageTextureCache[imagePath] = imageTexture;
+? ? ? ? }
+? ? ? } else {
+? ? ? ? imageTexture = it->second;
+? ? ? }
 
-      if (imageTexture) {
-        int effectWidth, effectHeight;
-        SDL_QueryTexture(imageTexture, nullptr, nullptr, &effectWidth,
-                         &effectHeight);
+? ? ? if (imageTexture) {
+? ? ? ? int effectWidth, effectHeight;
+? ? ? ? SDL_QueryTexture(imageTexture, nullptr, nullptr, &effectWidth,
+? ? ? ? ? ? ? ? ? ? ? ? ?&effectHeight);
 
-        SDL_Rect destRect = {screenW / 2 - effectWidth / 4, 80, effectWidth / 2,
-                             effectHeight / 2};
+? ? ? ? SDL_Rect destRect = {screenW / 2 - effectWidth / 4, 80, effectWidth / 2,
+? ? ? ? ? ? ? ? ? ? ? ? ? ? ?effectHeight / 2};
 
-        SDL_RenderCopy(rnd, imageTexture, nullptr, &destRect);
+? ? ? ? SDL_RenderCopy(rnd, imageTexture, nullptr, &destRect);
 
-        drawText(rnd, "SCORE: " + std::to_string(num), screenW / 2, 150,
-                 medium_font, {100, 255, 100, 255}, ALIGN_CENTER);
-      }
-    }
-  }
+? ? ? ? drawText(rnd, "SCORE: " + std::to_string(num), screenW / 2, 150,
+? ? ? ? ? ? ? ? ?medium_font, {100, 255, 100, 255}, ALIGN_CENTER);
+? ? ? }
+? ? }
+? }
 
-  SDL_Texture *createFragmentTexture(SDL_Renderer *rnd, int8_t fragmentValue,
-                                     bool pressed, uint32_t holdPressedTime) {
-    SDL_Texture *texture =
-        SDL_CreateTexture(rnd, SDL_PIXELFORMAT_RGBA8888,
-                          SDL_TEXTUREACCESS_TARGET, laneWidth, fragmentHeight);
-    SDL_SetTextureBlendMode(texture, SDL_BLENDMODE_BLEND);
+? SDL_Texture *createFragmentTexture(SDL_Renderer *rnd, int8_t fragmentValue,
+? ? ? ? ? ? ? ? ? ? ? ? ? ? ? ? ? ? ?bool pressed, uint32_t holdPressedTime) {
+? ? SDL_Texture *texture =
+? ? ? ? SDL_CreateTexture(rnd, SDL_PIXELFORMAT_RGBA8888,
+? ? ? ? ? ? ? ? ? ? ? ? ? SDL_TEXTUREACCESS_TARGET, laneWidth, fragmentHeight);
+? ? SDL_SetTextureBlendMode(texture, SDL_BLENDMODE_BLEND);
 
-    SDL_Texture *prevTarget = SDL_GetRenderTarget(rnd);
-    SDL_SetRenderTarget(rnd, texture);
+? ? SDL_Texture *prevTarget = SDL_GetRenderTarget(rnd);
+? ? SDL_SetRenderTarget(rnd, texture);
 
-    SDL_SetRenderDrawColor(rnd, 0, 0, 0, 0);
-    SDL_RenderClear(rnd);
+? ? SDL_SetRenderDrawColor(rnd, 0, 0, 0, 0);
+? ? SDL_RenderClear(rnd);
 
-    SDL_Color color;
-    if (fragmentValue == -1) {
-      color = {255, 50, 50, 255};
-    } else if (fragmentValue > 0) {
-      if (pressed) {
-        float pulse = 0.7f + 0.3f * sin(holdPressedTime / 100.0f);
-        color = {0, static_cast<Uint8>(150 * pulse), 0, 255};
-      } else {
-        color = {100, 255, 100, 200};
-      }
-    } else {
-      color = {80, 80, 180, 80};
-    }
+? ? SDL_Color color;
+? ? if (fragmentValue == -1) {
+? ? ? color = {255, 50, 50, 255};
+? ? } else if (fragmentValue > 0) {
+? ? ? if (pressed) {
+? ? ? ? float pulse = 0.7f + 0.3f * sin(holdPressedTime / 100.0f);
+? ? ? ? color = {0, static_cast<Uint8>(150 * pulse), 0, 255};
+? ? ? } else {
+? ? ? ? color = {100, 255, 100, 200};
+? ? ? }
+? ? } else {
+? ? ? color = {80, 80, 180, 80};
+? ? }
 
-    SDL_SetRenderDrawColor(rnd, color.r, color.g, color.b, color.a);
-    SDL_Rect fillRect = {1, 1, laneWidth - 2, fragmentHeight - 2};
-    SDL_RenderFillRect(rnd, &fillRect);
+? ? SDL_SetRenderDrawColor(rnd, color.r, color.g, color.b, color.a);
+? ? SDL_Rect fillRect = {1, 1, laneWidth - 2, fragmentHeight - 2};
+? ? SDL_RenderFillRect(rnd, &fillRect);
 
-    if (fragmentValue > 0) {
-      std::string holdText = std::to_string(fragmentValue);
-      drawText(rnd, holdText, laneWidth / 2, fragmentHeight / 2, small_font,
-               {255, 255, 255, 255}, ALIGN_CENTER);
-    }
+? ? if (fragmentValue > 0) {
+? ? ? std::string holdText = std::to_string(fragmentValue);
+? ? ? drawText(rnd, holdText, laneWidth / 2, fragmentHeight / 2, small_font,
+? ? ? ? ? ? ? ?{255, 255, 255, 255}, ALIGN_CENTER);
+? ? }
 
-    SDL_SetRenderTarget(rnd, prevTarget);
+? ? SDL_SetRenderTarget(rnd, prevTarget);
 
-    return texture;
-  }
+? ? return texture;
+? }
 
-  SDL_Texture *getTextTexture(SDL_Renderer *rnd, const std::string &text,
-                              TTF_Font *font, SDL_Color color) {
-    std::string cacheKey =
-        text + "_" + std::to_string(color.r) + "_" + std::to_string(color.g) +
-        "_" + std::to_string(color.b) + "_" + std::to_string(color.a);
+? SDL_Texture *getTextTexture(SDL_Renderer *rnd, const std::string &text,
+? ? ? ? ? ? ? ? ? ? ? ? ? ? ? TTF_Font *font, SDL_Color color) {
+? ? std::string cacheKey =
+? ? ? ? text + "_" + std::to_string(color.r) + "_" + std::to_string(color.g) +
+? ? ? ? "_" + std::to_string(color.b) + "_" + std::to_string(color.a);
 
-    auto it = textTextureCache.find(cacheKey);
-    if (it != textTextureCache.end()) {
-      return it->second;
-    }
+? ? auto it = textTextureCache.find(cacheKey);
+? ? if (it != textTextureCache.end()) {
+? ? ? return it->second;
+? ? }
 
-    SDL_Surface *textSurface =
-        TTF_RenderText_Blended(font, text.c_str(), color);
-    if (!textSurface) {
-      std::cerr << "TTF_RenderText error: " << TTF_GetError() << std::endl;
-      return nullptr;
-    }
+? ? SDL_Surface *textSurface =
+? ? ? ? TTF_RenderText_Blended(font, text.c_str(), color);
+? ? if (!textSurface) {
+? ? ? std::cerr << "TTF_RenderText error: " << TTF_GetError() << std::endl;
+? ? ? return nullptr;
+? ? }
 
-    SDL_Texture *texture = SDL_CreateTextureFromSurface(rnd, textSurface);
-    SDL_FreeSurface(textSurface);
+? ? SDL_Texture *texture = SDL_CreateTextureFromSurface(rnd, textSurface);
+? ? SDL_FreeSurface(textSurface);
 
-    if (texture) {
-      textTextureCache[cacheKey] = texture;
-    }
+? ? if (texture) {
+? ? ? textTextureCache[cacheKey] = texture;
+? ? }
 
-    return texture;
-  }
+? ? return texture;
+? }
 
-  void drawText(SDL_Renderer *rnd, const std::string &text, int x, int y,
-                TTF_Font *font, SDL_Color color, Alignment align = ALIGN_LEFT) {
-    if (text.empty())
-      return;
+? void drawText(SDL_Renderer *rnd, const std::string &text, int x, int y,
+? ? ? ? ? ? ? ? TTF_Font *font, SDL_Color color, Alignment align = ALIGN_LEFT) {
+? ? if (text.empty())
+? ? ? return;
 
-    SDL_Texture *textTexture = getTextTexture(rnd, text, font, color);
-    if (!textTexture)
-      return;
+? ? SDL_Texture *textTexture = getTextTexture(rnd, text, font, color);
+? ? if (!textTexture)
+? ? ? return;
 
-    int textWidth, textHeight;
-    SDL_QueryTexture(textTexture, nullptr, nullptr, &textWidth, &textHeight);
+? ? int textWidth, textHeight;
+? ? SDL_QueryTexture(textTexture, nullptr, nullptr, &textWidth, &textHeight);
 
-    SDL_Rect destRect;
-    destRect.y = y - textHeight / 2;
+? ? SDL_Rect destRect;
+? ? destRect.y = y - textHeight / 2;
 
-    switch (align) {
-    case ALIGN_LEFT:
-      destRect.x = x;
-      break;
-    case ALIGN_CENTER:
-      destRect.x = x - textWidth / 2;
-      break;
-    case ALIGN_RIGHT:
-      destRect.x = x - textWidth;
-      break;
-    }
+? ? switch (align) {
+? ? case ALIGN_LEFT:
+? ? ? destRect.x = x;
+? ? ? break;
+? ? case ALIGN_CENTER:
+? ? ? destRect.x = x - textWidth / 2;
+? ? ? break;
+? ? case ALIGN_RIGHT:
+? ? ? destRect.x = x - textWidth;
+? ? ? break;
+? ? }
 
-    destRect.w = textWidth;
-    destRect.h = textHeight;
+? ? destRect.w = textWidth;
+? ? destRect.h = textHeight;
 
-    SDL_RenderCopy(rnd, textTexture, nullptr, &destRect);
-  }
+? ? SDL_RenderCopy(rnd, textTexture, nullptr, &destRect);
+? }
 };

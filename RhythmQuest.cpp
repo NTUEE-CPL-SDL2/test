@@ -22,7 +22,7 @@
 
 TTF_Font *large_font, *medium_font, *small_font;
 int SCREEN_WIDTH = 1024;
-int SCREEN_HEIGHT = 768;
+int SCREEN_HEIGHT = 713;
 
 std::size_t LANES = 4;
 std::size_t FRAGMENTS = 10;
@@ -36,6 +36,10 @@ Renderer *gameRenderer =
     static_cast<Renderer *>(::operator new(sizeof(Renderer)));
 ChartParser *chartParser = new ChartParser(keyNotes);
 MusicManager *musicManager = new MusicManager();
+
+// 【新增】供 Renderer 存取 MouseNotes 的全局指標 (與 Renderer.hpp 中的 extern 宣告匹配)
+const std::vector<MouseNoteData>* mouseNotesPtr = nullptr;
+
 
 enum class GameState { SETTINGS, COUNTDOWN, GAME, PAUSE };
 
@@ -396,8 +400,8 @@ int main(int argc, char *argv[]) {
   SDL_Renderer *renderer = SDL_CreateRenderer(
       window, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
 
-    
-      
+
+
 
   if (!renderer) {
     std::cerr << "Renderer could not be created: " << SDL_GetError()
@@ -550,13 +554,13 @@ int main(int argc, char *argv[]) {
       // 載入譜面
       if (chartParser->load("./chart/test_chart.txt")) {
         std::cout << "[OK] Chart loaded successfully" << std::endl;
-        
-        // 取得音符資料
-        const std::vector<MouseNoteData>& mouseNotes = chartParser->getMouseNotes();
-        
+
+        // 【新增】設定 MouseNotes 全局指標
+        mouseNotesPtr = &chartParser->getMouseNotes();
+
         std::cout << "[INFO] Key notes: " << keyNotes.size() << std::endl;
-        std::cout << "[INFO] Mouse notes: " << mouseNotes.size() << std::endl;
-        
+        std::cout << "[INFO] Mouse notes: " << mouseNotesPtr->size() << std::endl; // 使用 mouseNotesPtr
+
         // 載入音樂
         musicManager->loadMusic(chartParser->getMusicFile());
       } else {
