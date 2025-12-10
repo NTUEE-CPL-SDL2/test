@@ -9,12 +9,10 @@
 #include <cstdint>
 #include <cstddef>
 
-// 按鍵音符結構（同學A使用）
-struct KeyNoteData {
-    std::size_t startFragment;
-    std::size_t lane;
-    int8_t holds;  // -1=TAP, >=1=持續fragments
-};
+#include "include/vector.hpp"
+#include "include/qsort.hpp"
+
+#include "KeyNoteData.hpp"
 
 // 滑鼠物件結構（同學B使用）
 struct MouseNoteData {
@@ -29,7 +27,7 @@ private:
     int offset;
     int fragmentsPerBeat;
     std::string musicFile;
-    std::vector<KeyNoteData> keyNotes;
+    mystd::vector<KeyNoteData>& keyNotes;
     std::vector<MouseNoteData> mouseNotes;
 
     std::string trim(const std::string& str) {
@@ -167,7 +165,7 @@ private:
     }
 
 public:
-    ChartParser() : bpm(120), offset(0), fragmentsPerBeat(4) {}
+    ChartParser(mystd::vector<KeyNoteData>& keyNotes_) : bpm(120), offset(0), fragmentsPerBeat(4), keyNotes(keyNotes_) {}
     
     bool load(const std::string& filepath) {
         std::ifstream file(filepath);
@@ -203,9 +201,9 @@ public:
         
         file.close();
         
-        std::sort(keyNotes.begin(), keyNotes.end(), 
+        qsort(keyNotes.begin(), keyNotes.end(), 
             [](const KeyNoteData& a, const KeyNoteData& b) { return a.startFragment < b.startFragment; });
-        std::sort(mouseNotes.begin(), mouseNotes.end(),
+        qsort(mouseNotes.begin(), mouseNotes.end(),
             [](const MouseNoteData& a, const MouseNoteData& b) { return a.startFragment < b.startFragment; });
         
         std::cout << "[OK] Chart loaded: " << filepath << std::endl;
@@ -215,7 +213,7 @@ public:
         return true;
     }
     
-    const std::vector<KeyNoteData>& getKeyNotes() const { return keyNotes; }
+    // const std::vector<KeyNoteData>& getKeyNotes() const { return keyNotes; }
     const std::vector<MouseNoteData>& getMouseNotes() const { return mouseNotes; }
     const std::string& getMusicFile() const { return musicFile; }
     int getBPM() const { return bpm; }

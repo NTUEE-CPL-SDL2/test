@@ -9,18 +9,14 @@
 #include "include/priority_queue.hpp"
 #include "include/vector.hpp"
 
+#include "KeyNoteData.hpp"
+
 // int8_t: -1 = tap, -2 = invisible tap, >=1 = number of remaining fragments to
 // hold, 0 = empty
 
 template <class T> class game_priority_queue : public mystd::priority_queue<T> {
 public:
   using mystd::priority_queue<T>::c;
-};
-
-struct NoteData {
-  std::size_t startFragment;
-  std::size_t lane;
-  int8_t holds;
 };
 
 const uint32_t NO_LANE_EFFECT = 0u;
@@ -45,7 +41,7 @@ bool operator<(Effect lhs, Effect rhs) { return lhs.endTime > rhs.endTime; }
 
 class Game {
 public:
-  mystd::vector<NoteData> notes; // sorted by startFragment
+  mystd::vector<KeyNoteData>& notes; // sorted by startFragment
   std::size_t lanes;
   std::size_t fragments;    // visible fragments
   uint32_t msPerFragment;   // ms per fragment
@@ -69,8 +65,8 @@ public:
   game_priority_queue<Effect> centerEffects = game_priority_queue<Effect>();
 
 public:
-  Game(std::size_t lanes_, std::size_t fragments_, uint32_t mpf)
-      : lanes(lanes_), fragments(fragments_), msPerFragment(mpf) {
+  Game(std::size_t lanes_, std::size_t fragments_, uint32_t mpf, mystd::vector<KeyNoteData>& keynotes)
+      : lanes(lanes_), fragments(fragments_), msPerFragment(mpf), notes(keynotes) {
     highway.reserve(lanes);
     for (uint8_t i = 0; i < lanes; ++i) {
       highway.emplace_back(mystd::circulate<int8_t, mystd::vector<int8_t>>(
@@ -195,7 +191,7 @@ public:
     // 4. Load new notes into top
     while (loadNext < notes.size() &&
            notes[loadNext].startFragment == nowFragment) {
-      const NoteData &nd = notes[loadNext];
+      const KeyNoteData &nd = notes[loadNext];
       if (nd.lane < lanes)
         highway[nd.lane][0] = nd.holds;
       loadNext++;
