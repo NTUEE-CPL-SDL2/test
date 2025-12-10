@@ -14,6 +14,8 @@
 #include "Mods.hpp"
 #include "Renderer.hpp"
 #include "Settings.hpp"
+#include "ChartParser.hpp"
+#include "MusicManager.hpp"
 #include "mods/GameOfLife.hpp"
 
 TTF_Font *large_font, *medium_font, *small_font;
@@ -29,7 +31,8 @@ SettingsFunc modSettingsFunc;
 Game *game = static_cast<Game *>(::operator new(sizeof(Game)));
 Renderer *gameRenderer =
     static_cast<Renderer *>(::operator new(sizeof(Renderer)));
-
+ChartParser *chartParser = new ChartParser();
+MusicManager *musicManager = new MusicManager();
 enum class GameState { SETTINGS, COUNTDOWN, GAME, PAUSE };
 
 GameState currentState;
@@ -207,6 +210,10 @@ int main(int argc, char *argv[]) {
 
   SDL_Renderer *renderer = SDL_CreateRenderer(
       window, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
+
+    
+      
+
   if (!renderer) {
     std::cerr << "Renderer could not be created: " << SDL_GetError()
               << std::endl;
@@ -355,6 +362,22 @@ int main(int argc, char *argv[]) {
     switch (currentState) {
     case GameState::SETTINGS:
       showSettings(renderer);
+      // 載入譜面
+      if (chartParser->load("./chart/test_chart.txt")) {
+        std::cout << "[OK] Chart loaded successfully" << std::endl;
+        
+        // 取得音符資料
+        const std::vector<KeyNoteData>& keyNotes = chartParser->getKeyNotes();
+        const std::vector<MouseNoteData>& mouseNotes = chartParser->getMouseNotes();
+        
+        std::cout << "[INFO] Key notes: " << keyNotes.size() << std::endl;
+        std::cout << "[INFO] Mouse notes: " << mouseNotes.size() << std::endl;
+        
+        // 載入音樂
+        musicManager->loadMusic(chartParser->getMusicFile());
+      } else {
+        std::cerr << "[ERROR] Failed to load chart" << std::endl;
+      }
       currentState = GameState::COUNTDOWN;
       break;
 
@@ -362,6 +385,7 @@ int main(int argc, char *argv[]) {
       showCountdown(renderer);
       gameStartTime = SDL_GetTicks();
       lastFragmentTime = gameStartTime;
+      musicManager->playMusic(0);  // 加這行：播放音樂一次
       currentState = GameState::GAME;
       break;
 
@@ -394,6 +418,8 @@ int main(int argc, char *argv[]) {
 
   delete gameRenderer;
   delete game;
+  delete chartParser;
+  delete musicManager;
   SDL_DestroyRenderer(renderer);
   SDL_DestroyWindow(window);
   TTF_CloseFont(large_font);
