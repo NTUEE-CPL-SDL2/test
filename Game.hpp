@@ -215,6 +215,11 @@ public:
     }
   }
 
+  void addMouseScore(int scoreToAdd) {
+    // ½T«O Game.score ¦s¦b
+    score += scoreToAdd; 
+  }
+
   void keyReleased(std::size_t lane, uint32_t nowMs) {
     lanePressed[lane] = false;
     int8_t &bottom = highway[lane].back();

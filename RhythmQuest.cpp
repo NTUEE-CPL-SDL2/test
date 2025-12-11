@@ -16,11 +16,13 @@
 #include "KeyNoteData.hpp"
 #include "Game.hpp"
 #include "Mods.hpp"
-#include "Renderer.hpp"
+#include "Renderer.hpp" // 包含 Renderer.hpp 以使用 MouseNoteCollisionData
+
 #include "ChartParser.hpp"
 #include "MusicManager.hpp"
 #include "mods/GameOfLife.hpp"
 
+// 【修改】Character 類別新增 getCollisionRect()
 class Character {
 private:
     int x;
@@ -125,6 +127,18 @@ public:
         SDL_RenderCopy(renderer, currentTexture, nullptr, &destRect);
     }
 
+    // 【新增】獲取角色的碰撞箱 (AABB)
+    SDL_Rect getCollisionRect() const {
+        // 返回角色的邊界框 (以角色中心為基準計算左上角)
+        return {
+            x - width / 2,
+            y - height / 2,
+            width,
+            height
+        };
+    }
+
+
     Character(const Character&) = delete;
     Character& operator=(const Character&) = delete;
 };
@@ -153,6 +167,16 @@ enum class GameState { SETTINGS, COUNTDOWN, GAME, PAUSE };
 
 GameState currentState;
 bool running = true;
+
+// 【新增】AABB 碰撞檢查函式
+bool checkCollision(const SDL_Rect& a, const SDL_Rect& b) {
+    // 檢查 x 軸是否重疊
+    bool x_overlap = a.x < b.x + b.w && a.x + a.w > b.x;
+    // 檢查 y 軸是否重疊
+    bool y_overlap = a.y < b.y + b.h && a.y + a.h > b.y;
+
+    return x_overlap && y_overlap;
+}
 
 void renderText(SDL_Renderer *rnd, TTF_Font *font, const std::string &text,
                 int x, int y, SDL_Color color, Alignment align = ALIGN_CENTER) {
@@ -217,7 +241,7 @@ void renderRoundedRect(SDL_Renderer *renderer, SDL_Rect rect, int radius,
 
 bool pointInRect(int x, int y, SDL_Rect rect) {
   return x >= rect.x && x < rect.x + rect.w && y >= rect.y &&
-           y < rect.y + rect.h;
+             y < rect.y + rect.h;
 }
 
 void showSettings(SDL_Renderer *renderer) {
@@ -520,7 +544,7 @@ int main(int argc, char *argv[]) {
     return 1;
   }
 
-  const int CHARACTER_Y_POS = (int)(SCREEN_HEIGHT * 0.85);
+  const int CHARACTER_Y_POS = (int)(SCREEN_HEIGHT * 0.9);
 
   // VVV 調整角色圖片大小參數 VVV
   const int CHARACTER_WIDTH = 100;
@@ -719,13 +743,43 @@ int main(int argc, char *argv[]) {
 
       if (offsetMs >= MS_PER_FRAGMENT) {
         game->loadFragment(mystd::get<0>(getModMap()[MOD]),
-                             mystd::get<1>(getModMap()[MOD]));
+                           mystd::get<1>(getModMap()[MOD]));
         lastFragmentTime += MS_PER_FRAGMENT;
         offsetMs = 0;
       }
 
       if (character) {
           character->updatePosition(mouseX, currentTime); // 傳入 currentTime
+      }
+
+      // 【新增】碰撞判定與得分邏輯
+      if (gameRenderer && character) {
+          uint32_t nowMs = currentTime - gameStartTime;
+          // 獲取當前可見的音符碰撞箱
+          std::vector<MouseNoteCollisionData> visibleMouseNotes =
+              gameRenderer->getVisibleMouseNoteCollisions(nowMs);
+          SDL_Rect characterRect = character->getCollisionRect();
+
+          for (const auto& note : visibleMouseNotes) {
+              if (checkCollision(characterRect, note.rect)) {
+                  // MouseNote_GREEN (type 0)
+                  if (note.type == 0) {
+                      // **注意：為避免重複得分，您需要在 Game 類別中實作標記音符為「已擊中」的邏輯。**
+                      game->addMouseScore(500);
+                      // 這裡僅輸出訊息作為碰撞發生證明，實際遊戲中應移除
+                      // std::cout << "Collision with GREEN Note (Frag: " << note.startFragment << ")! Score +500" << std::endl;
+                  }
+                  // MouseNote_RED (type 1)
+                  else if (note.type == 1) {
+                      game->addMouseScore(-500);
+                      // 這裡僅輸出訊息作為碰撞發生證明，實際遊戲中應移除
+                      // std::cout << "Collision with RED Note (Frag: " << note.startFragment << ")! Score -500" << std::endl;
+                  }
+
+                  // **重要：** 碰撞後，您需要呼叫 Game 類別中的一個方法來標記此音符為已處理/已擊中，
+                  // 確保它在下一幀不會被 `getVisibleMouseNoteCollisions` 再次返回。
+              }
+          }
       }
 
       gameRenderer->render(renderer, offsetMs);

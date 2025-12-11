@@ -34,6 +34,13 @@ extern const uint32_t SCORE;
 
 enum Alignment : uint8_t { ALIGN_LEFT, ALIGN_CENTER, ALIGN_RIGHT };
 
+// 新增：滑鼠音符碰撞資訊結構
+struct MouseNoteCollisionData {
+    SDL_Rect rect;  // 碰撞箱 (世界座標)
+    int type;       // 音符類型 (0: GREEN, 1: RED)
+    int startFragment; // 音符開始的 Fragment (用於在 Game 類別中追蹤)
+};
+
 struct NotesCacheHash {
     std::size_t operator()(const mystd::tuple<int8_t, bool, uint32_t> &t) const {
         auto hash1 = std::hash<int8_t>{}(mystd::get<0>(t));
@@ -62,253 +69,8 @@ private:
     TTF_Font *small_font;
 
     SDL_Renderer *sdl_renderer;
-
-    SDL_Texture *getMouseNoteTexture(int type) {
-        std::string path;
-        if (type == 0) {
-            path = "res/img/MouseNote_GREEN.png";
-        } else {
-            path = "res/img/MouseNote_RED.png";
-        }
-
-        auto it = imageTextureCache.find(path);
-        if (it != imageTextureCache.end()) {
-            return it->second;
-        }
-
-        SDL_Texture *texture = loadImageTexture(path.c_str());
-        if (texture) {
-            imageTextureCache[path] = texture;
-        }
-        return texture;
-    }
     
-    void drawMouseNotes(SDL_Renderer *rnd, uint32_t nowMs) {
-        if (!mouseNotesPtr || mouseNotesPtr->empty() || !chartParser || MS_PER_FRAGMENT == 0) {
-            return;
-        }
-
-        const double visibleTime = (double)game.fragments * (double)MS_PER_FRAGMENT; 
-        const int hitLineY = screenH - fragmentHeight; 
-        const int highwayLength = screenH - fragmentHeight; 
-
-        // >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> 【圖片大小/位置修改點 A：滑鼠音符大小】
-        // 原始設定：與 KeyNote 相同大小
-        const double scaleFactorW = 1.0; // 調整寬度縮放比例 (例如：0.8 為 80%)
-        const double scaleFactorH = 1.0; // 調整高度縮放比例 (例如：1.2 為 120%)
-        const int baseNoteWidth = laneWidth;
-        const int baseNoteHeight = fragmentHeight;
-        // <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< 【圖片大小/位置修改點 A：滑鼠音符大小】
-
-
-        for (const auto &note : *mouseNotesPtr) {
-            const double noteTimeMs = chartParser->getFragmentTime(note.startFragment);
-            const double dt = noteTimeMs - (double)nowMs;
-
-            if (dt < -(double)MS_PER_FRAGMENT || dt > visibleTime * 1.05) {
-                continue;
-            }
-
-            const double relativePos = dt / visibleTime;
-            const int noteYCenter = (int)std::round((double)hitLineY - ((double)highwayLength * relativePos));
-            
-            // 套用自定義大小
-            const int noteWidth = (int)std::round(baseNoteWidth * scaleFactorW);
-            const int noteHeight = (int)std::round(baseNoteHeight * scaleFactorH); 
-
-            // 計算 X 座標 (中心對齊在指定 Lane)
-            const int laneCenterX = note.lane * laneWidth + laneWidth / 2;
-            
-            SDL_Rect destRect;
-            
-            // >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> 【圖片大小/位置修改點 B：滑鼠音符位置】
-            // destRect.x 和 destRect.y 決定音符的左上角位置
-            const int offsetX = 0; // X 軸偏移量 (正值向右，負值向左)
-            const int offsetY = 0; // Y 軸偏移量 (正值向下，負值向上)
-
-            destRect.x = laneCenterX - noteWidth / 2 + offsetX;
-            destRect.y = noteYCenter - noteHeight / 2 + offsetY;
-            // <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< 【圖片大小/位置修改點 B：滑鼠音符位置】
-
-            destRect.w = noteWidth;
-            destRect.h = noteHeight;
-
-            SDL_Texture *texture = getMouseNoteTexture(note.type);
-
-            if (!texture) {
-                SDL_SetRenderDrawColor(rnd, (note.type == 0 ? 0 : 255), (note.type == 0 ? 255 : 0), 0, 255); 
-                SDL_RenderFillRect(rnd, &destRect);
-            } else {
-                SDL_RenderCopy(rnd, texture, nullptr, &destRect);
-            }
-        }
-    }
-
-public:
-    float fps;
-
-    Renderer(Game &game_, int screenW_, int screenH_, SDL_Renderer *renderer,
-             TTF_Font *large_font_, TTF_Font *medium_font_, TTF_Font *small_font_)
-        : game(game_), screenW(screenW_), screenH(screenH_),
-          sdl_renderer(renderer), large_font(large_font_),
-          medium_font(medium_font_), small_font(small_font_), fps(0) {
-        laneWidth = screenW / game.lanes;
-        fragmentHeight = screenH / game.fragments;
-
-        loadEffectImages();
-    }
-
-    ~Renderer() { clearCache(); }
-
-    void render(SDL_Renderer *rnd, uint32_t offsetMs) {
-        SDL_SetRenderDrawColor(rnd, 80, 80, 180, 80);
-        SDL_RenderClear(rnd);
-
-        SDL_SetRenderDrawColor(rnd, 100, 100, 100, 255);
-        for (std::size_t lane = 1; lane < game.lanes; ++lane) {
-            int x = lane * laneWidth;
-            SDL_RenderDrawLine(rnd, x, 0, x, screenH);
-        }
-
-        SDL_SetRenderDrawColor(rnd, 60, 60, 60, 255);
-        for (std::size_t fragment = 1; fragment < game.fragments; ++fragment) {
-            int y = fragment * fragmentHeight;
-            SDL_RenderDrawLine(rnd, 0, y, screenW, y);
-        }
-
-        for (std::size_t lane = 0; lane < game.lanes; ++lane) {
-            bool lanePressed = game.lanePressed[lane];
-
-            for (std::size_t fragmentIdx = 0; fragmentIdx < game.fragments;
-                 ++fragmentIdx) {
-                int8_t fragmentValue = game.highway[lane][fragmentIdx];
-                uint32_t holdTime = 0;
-
-                if (fragmentIdx == game.fragments - 1 && fragmentValue > 0 &&
-                    lanePressed) {
-                    holdTime = game.holdPressedTime[lane];
-                }
-
-                auto key = mystd::make_tuple(
-                    fragmentValue, lanePressed && fragmentIdx == game.fragments - 1,
-                    holdTime);
-
-                auto it = notesTextureCache.find(key);
-                SDL_Texture *texture;
-
-                if (it == notesTextureCache.end()) {
-                    texture = createFragmentTexture(
-                        rnd, fragmentValue,
-                        lanePressed && fragmentIdx == game.fragments - 1, holdTime);
-                    notesTextureCache[key] = texture;
-                } else {
-                    texture = it->second;
-                }
-
-                SDL_Rect destRect;
-                destRect.x = lane * laneWidth;
-                double progress = (double)offsetMs / (double)game.msPerFragment;
-                if (progress > 1.0)
-                    progress = 1.0;
-                double smoothY = (fragmentIdx + progress) * fragmentHeight;
-
-                destRect.y = (int)smoothY;
-
-                destRect.w = laneWidth;
-                destRect.h = fragmentHeight;
-
-                SDL_RenderCopy(rnd, texture, nullptr, &destRect);
-            }
-
-            int laneCenterX = lane * laneWidth + laneWidth / 2;
-            std::string keyHint;
-            switch (lane) {
-            case 0:
-                keyHint = "A";
-                break;
-            case 1:
-                keyHint = "S";
-                break;
-            case 2:
-                keyHint = "D";
-                break;
-            case 3:
-                keyHint = "F";
-                break;
-            case 4:
-                keyHint = "G";
-                break;
-            case 5:
-                keyHint = "H";
-                break;
-            case 6:
-                keyHint = "J";
-                break;
-            case 7:
-                keyHint = "K";
-                break;
-            case 8:
-                keyHint = "L";
-                break;
-            default:
-                keyHint = std::to_string(lane + 1);
-                break;
-            }
-            drawText(rnd, keyHint, laneCenterX, screenH - 30, small_font,
-                     {200, 200, 200, 255}, ALIGN_CENTER);
-        }
-
-        SDL_SetRenderDrawColor(rnd, 255, 255, 255, 255);
-        int judgmentLineY = screenH - fragmentHeight;
-        SDL_Rect judgmentLine = {0, judgmentLineY, screenW, 3};
-        SDL_RenderFillRect(rnd, &judgmentLine);
-        
-        uint32_t nowMs = (game.nowFragment * game.msPerFragment) + offsetMs;
-        drawMouseNotes(rnd, nowMs);
-
-
-        drawText(rnd, "Score: " + std::to_string(game.score), screenW / 2, 30,
-                 medium_font, {255, 255, 255, 255}, ALIGN_CENTER);
-
-        const int statsX = 20;
-        const int statsY = 30;
-        const int lineHeight = 40;
-
-        drawText(rnd, "PERFECT: " + std::to_string(game.perfectCount), statsX,
-                 statsY, small_font, {0, 255, 0, 255});
-        drawText(rnd, "GREAT: " + std::to_string(game.greatCount), statsX,
-                 statsY + lineHeight, small_font, {0, 200, 100, 255});
-        drawText(rnd, "GOOD: " + std::to_string(game.goodCount), statsX,
-                 statsY + lineHeight * 2, small_font, {200, 200, 0, 255});
-        drawText(rnd, "BAD: " + std::to_string(game.badCount), statsX,
-                 statsY + lineHeight * 3, small_font, {255, 100, 0, 255});
-        drawText(rnd, "MISS: " + std::to_string(game.missCount), statsX,
-                 statsY + lineHeight * 4, small_font, {255, 0, 0, 255});
-        drawText(rnd, "COMBO: " + std::to_string(game.combo), statsX,
-                 statsY + lineHeight * 5, small_font, {255, 255, 255, 255});
-        drawText(rnd, "MAX COMBO: " + std::to_string(game.maxCombo), statsX,
-                 statsY + lineHeight * 6, small_font, {255, 255, 255, 255});
-        drawText(rnd, "HELD TIME: " + std::to_string(game.heldTime) + " ms", statsX,
-                 statsY + lineHeight * 7, small_font, {100, 255, 100, 255});
-
-        drawText(rnd, "Fragment: " + std::to_string(game.nowFragment), screenW - 20,
-                 30, small_font, {200, 200, 200, 255}, ALIGN_RIGHT);
-        drawText(rnd, "FPS: " + std::to_string(fps), screenW - 20, 70, small_font,
-                 {200, 200, 200, 255}, ALIGN_RIGHT);
-
-        for (std::size_t lane = 0; lane < game.lanes; ++lane) {
-            uint32_t effect = game.laneEffects[lane].content;
-            if (effect != NO_LANE_EFFECT) {
-                drawLaneEffect(rnd, lane, effect);
-            }
-        }
-
-        for (std::size_t i = 0; i < game.centerEffects.size(); ++i) {
-            drawCenterEffect(rnd, game.centerEffects.c[i].content,
-                             game.centerEffects.c[i].num);
-        }
-    }
-
+    // 【修正 1】將 clearCache 定義為私有方法
     void clearCache() {
         for (auto &pair : notesTextureCache) {
             SDL_DestroyTexture(pair.second);
@@ -325,20 +87,7 @@ public:
         }
         imageTextureCache.clear();
     }
-
-    void updateDimension(int screenW_, int screenH_) {
-        if (screenW != screenW_ || screenH != screenH_) {
-            screenW = screenW_;
-            screenH = screenH_;
-            laneWidth = screenW / game.lanes;
-            fragmentHeight = screenH / game.fragments;
-
-            clearCache();
-            loadEffectImages();
-        }
-    }
-
-private:
+    
     void loadEffectImages() {
         const char *effectImages[] = {
             "res/img/perfect.png", "res/img/great.png", "res/img/good.png",
@@ -400,6 +149,104 @@ private:
 
         return scaledTexture;
     }
+
+
+    SDL_Texture *getMouseNoteTexture(int type) {
+        std::string path;
+        if (type == 0) {
+            path = "res/img/MouseNote_GREEN.png";
+        } else {
+            path = "res/img/MouseNote_RED.png";
+        }
+
+        auto it = imageTextureCache.find(path);
+        if (it != imageTextureCache.end()) {
+            return it->second;
+        }
+
+        SDL_Texture *texture = loadImageTexture(path.c_str());
+        if (texture) {
+            imageTextureCache[path] = texture;
+        }
+        return texture;
+    }
+    
+    std::vector<MouseNoteCollisionData> calculateMouseNoteCollisions(uint32_t nowMs) {
+        std::vector<MouseNoteCollisionData> collisions;
+
+        if (!mouseNotesPtr || mouseNotesPtr->empty() || !chartParser || MS_PER_FRAGMENT == 0) {
+            return collisions;
+        }
+
+        const double visibleTime = (double)game.fragments * (double)MS_PER_FRAGMENT; 
+        const int hitLineY = screenH - fragmentHeight; 
+        const int highwayLength = screenH - fragmentHeight; 
+
+        // >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> 【圖片大小/位置修改點 A：滑鼠音符大小】
+        const double scaleFactorW = 1.0; 
+        const double scaleFactorH = 1.0; 
+        const int baseNoteWidth = laneWidth;
+        const int baseNoteHeight = fragmentHeight;
+        // <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< 【圖片大小/位置修改點 A：滑鼠音符大小】
+
+
+        for (const auto &note : *mouseNotesPtr) {
+            // 由於 Game 類別處理音符狀態的邏輯不在這裡，我們假設這裡只處理可見/未處理的音符
+            
+            const double noteTimeMs = chartParser->getFragmentTime(note.startFragment);
+            const double dt = noteTimeMs - (double)nowMs;
+
+            if (dt < -(double)MS_PER_FRAGMENT || dt > visibleTime * 1.05) {
+                continue;
+            }
+
+            const double relativePos = dt / visibleTime;
+            const int noteYCenter = (int)std::round((double)hitLineY - ((double)highwayLength * relativePos));
+            
+            // 套用自定義大小
+            const int noteWidth = (int)std::round(baseNoteWidth * scaleFactorW);
+            const int noteHeight = (int)std::round(baseNoteHeight * scaleFactorH); 
+
+            // 計算 X 座標 (中心對齊在指定 Lane)
+            const int laneCenterX = note.lane * laneWidth + laneWidth / 2;
+            
+            // >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> 【圖片大小/位置修改點 B：滑鼠音符位置】
+            const int offsetX = 0; // X 軸偏移量 (正值向右，負值向左)
+            const int offsetY = 0; // Y 軸偏移量 (正值向下，負值向上)
+
+            SDL_Rect collisionRect;
+            collisionRect.x = laneCenterX - noteWidth / 2 + offsetX;
+            collisionRect.y = noteYCenter - noteHeight / 2 + offsetY;
+            // <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< 【圖片大小/位置修改點 B：滑鼠音符位置】
+
+            collisionRect.w = noteWidth;
+            collisionRect.h = noteHeight;
+
+            collisions.push_back({
+                collisionRect,
+                note.type,
+                note.startFragment
+            });
+        }
+        return collisions;
+    }
+
+
+    void renderMouseNotes(SDL_Renderer *rnd, const std::vector<MouseNoteCollisionData>& visibleNotes) {
+        for (const auto &noteCollision : visibleNotes) {
+            SDL_Texture *texture = getMouseNoteTexture(noteCollision.type);
+            
+            if (!texture) {
+                // 繪製備用矩形
+                SDL_SetRenderDrawColor(rnd, (noteCollision.type == 0 ? 0 : 255), (noteCollision.type == 0 ? 255 : 0), 0, 255); 
+                SDL_RenderFillRect(rnd, &noteCollision.rect);
+            } else {
+                // 繪製紋理
+                SDL_RenderCopy(rnd, texture, nullptr, &noteCollision.rect);
+            }
+        }
+    }
+
 
     void drawLaneEffect(SDL_Renderer *rnd, std::size_t lane, uint32_t effect) {
         std::string imagePath;
@@ -647,5 +494,191 @@ private:
         destRect.h = textHeight;
 
         SDL_RenderCopy(rnd, textTexture, nullptr, &destRect);
+    }
+    
+public:
+    float fps;
+
+    Renderer(Game &game_, int screenW_, int screenH_, SDL_Renderer *renderer,
+             TTF_Font *large_font_, TTF_Font *medium_font_, TTF_Font *small_font_)
+        : game(game_), screenW(screenW_), screenH(screenH_),
+          sdl_renderer(renderer), large_font(large_font_),
+          medium_font(medium_font_), small_font(small_font_), fps(0) {
+        laneWidth = screenW / game.lanes;
+        fragmentHeight = screenH / game.fragments;
+
+        loadEffectImages();
+    }
+
+    // 【修正 1】析構函式現在可以呼叫 clearCache
+    ~Renderer() { clearCache(); }
+
+    // 【修正 2】將 updateDimension 實作移到 public 區塊或提供完整定義
+    void updateDimension(int screenW_, int screenH_) {
+        if (screenW != screenW_ || screenH != screenH_) {
+            screenW = screenW_;
+            screenH = screenH_;
+            laneWidth = screenW / game.lanes;
+            fragmentHeight = screenH / game.fragments;
+
+            clearCache();
+            loadEffectImages();
+        }
+    }
+
+    // 提供給外部獲取可見滑鼠音符碰撞箱的介面
+    std::vector<MouseNoteCollisionData> getVisibleMouseNoteCollisions(uint32_t nowMs) {
+        return calculateMouseNoteCollisions(nowMs);
+    }
+
+    void render(SDL_Renderer *rnd, uint32_t offsetMs) {
+        SDL_SetRenderDrawColor(rnd, 80, 80, 180, 80);
+        SDL_RenderClear(rnd);
+
+        SDL_SetRenderDrawColor(rnd, 100, 100, 100, 255);
+        for (std::size_t lane = 1; lane < game.lanes; ++lane) {
+            int x = lane * laneWidth;
+            SDL_RenderDrawLine(rnd, x, 0, x, screenH);
+        }
+
+        SDL_SetRenderDrawColor(rnd, 60, 60, 60, 255);
+        for (std::size_t fragment = 1; fragment < game.fragments; ++fragment) {
+            int y = fragment * fragmentHeight;
+            SDL_RenderDrawLine(rnd, 0, y, screenW, y);
+        }
+
+        for (std::size_t lane = 0; lane < game.lanes; ++lane) {
+            bool lanePressed = game.lanePressed[lane];
+
+            for (std::size_t fragmentIdx = 0; fragmentIdx < game.fragments;
+                 ++fragmentIdx) {
+                int8_t fragmentValue = game.highway[lane][fragmentIdx];
+                uint32_t holdTime = 0;
+
+                if (fragmentIdx == game.fragments - 1 && fragmentValue > 0 &&
+                    lanePressed) {
+                    holdTime = game.holdPressedTime[lane];
+                }
+
+                auto key = mystd::make_tuple(
+                    fragmentValue, lanePressed && fragmentIdx == game.fragments - 1,
+                    holdTime);
+
+                auto it = notesTextureCache.find(key);
+                SDL_Texture *texture;
+
+                if (it == notesTextureCache.end()) {
+                    texture = createFragmentTexture(
+                        rnd, fragmentValue,
+                        lanePressed && fragmentIdx == game.fragments - 1, holdTime);
+                    notesTextureCache[key] = texture;
+                } else {
+                    texture = it->second;
+                }
+
+                SDL_Rect destRect;
+                destRect.x = lane * laneWidth;
+                double progress = (double)offsetMs / (double)game.msPerFragment;
+                if (progress > 1.0)
+                    progress = 1.0;
+                double smoothY = (fragmentIdx + progress) * fragmentHeight;
+
+                destRect.y = (int)smoothY;
+
+                destRect.w = laneWidth;
+                destRect.h = fragmentHeight;
+
+                SDL_RenderCopy(rnd, texture, nullptr, &destRect);
+            }
+
+            int laneCenterX = lane * laneWidth + laneWidth / 2;
+            std::string keyHint;
+            switch (lane) {
+            case 0:
+                keyHint = "A";
+                break;
+            case 1:
+                keyHint = "S";
+                break;
+            case 2:
+                keyHint = "D";
+                break;
+            case 3:
+                keyHint = "F";
+                break;
+            case 4:
+                keyHint = "G";
+                break;
+            case 5:
+                keyHint = "H";
+                break;
+            case 6:
+                keyHint = "J";
+                break;
+            case 7:
+                keyHint = "K";
+                break;
+            case 8:
+                keyHint = "L";
+                break;
+            default:
+                keyHint = std::to_string(lane + 1);
+                break;
+            }
+            drawText(rnd, keyHint, laneCenterX, screenH - 30, small_font,
+                     {200, 200, 200, 255}, ALIGN_CENTER);
+        }
+
+        SDL_SetRenderDrawColor(rnd, 255, 255, 255, 255);
+        int judgmentLineY = screenH - fragmentHeight;
+        SDL_Rect judgmentLine = {0, judgmentLineY, screenW, 3};
+        SDL_RenderFillRect(rnd, &judgmentLine);
+        
+        uint32_t nowMs = (game.nowFragment * game.msPerFragment) + offsetMs;
+        
+        std::vector<MouseNoteCollisionData> visibleNotes = calculateMouseNoteCollisions(nowMs);
+        renderMouseNotes(rnd, visibleNotes);
+
+
+        drawText(rnd, "Score: " + std::to_string(game.score), screenW / 2, 30,
+                 medium_font, {255, 255, 255, 255}, ALIGN_CENTER);
+
+        const int statsX = 20;
+        const int statsY = 30;
+        const int lineHeight = 40;
+
+        drawText(rnd, "PERFECT: " + std::to_string(game.perfectCount), statsX,
+                 statsY, small_font, {0, 255, 0, 255});
+        drawText(rnd, "GREAT: " + std::to_string(game.greatCount), statsX,
+                 statsY + lineHeight, small_font, {0, 200, 100, 255});
+        drawText(rnd, "GOOD: " + std::to_string(game.goodCount), statsX,
+                 statsY + lineHeight * 2, small_font, {200, 200, 0, 255});
+        drawText(rnd, "BAD: " + std::to_string(game.badCount), statsX,
+                 statsY + lineHeight * 3, small_font, {255, 100, 0, 255});
+        drawText(rnd, "MISS: " + std::to_string(game.missCount), statsX,
+                 statsY + lineHeight * 4, small_font, {255, 0, 0, 255});
+        drawText(rnd, "COMBO: " + std::to_string(game.combo), statsX,
+                 statsY + lineHeight * 5, small_font, {255, 255, 255, 255});
+        drawText(rnd, "MAX COMBO: " + std::to_string(game.maxCombo), statsX,
+                 statsY + lineHeight * 6, small_font, {255, 255, 255, 255});
+        drawText(rnd, "HELD TIME: " + std::to_string(game.heldTime) + " ms", statsX,
+                 statsY + lineHeight * 7, small_font, {100, 255, 100, 255});
+
+        drawText(rnd, "Fragment: " + std::to_string(game.nowFragment), screenW - 20,
+                 30, small_font, {200, 200, 200, 255}, ALIGN_RIGHT);
+        drawText(rnd, "FPS: " + std::to_string(fps), screenW - 20, 70, small_font,
+                 {200, 200, 200, 255}, ALIGN_RIGHT);
+
+        for (std::size_t lane = 0; lane < game.lanes; ++lane) {
+            uint32_t effect = game.laneEffects[lane].content;
+            if (effect != NO_LANE_EFFECT) {
+                drawLaneEffect(rnd, lane, effect);
+            }
+        }
+
+        for (std::size_t i = 0; i < game.centerEffects.size(); ++i) {
+            drawCenterEffect(rnd, game.centerEffects.c[i].content,
+                             game.centerEffects.c[i].num);
+        }
     }
 };
