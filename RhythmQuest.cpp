@@ -9,9 +9,10 @@
 #include <cstdint>
 #include <functional>
 #include <iostream>
+#include <vector>
+#include <string>
 
 #include "include/vector.hpp"
-
 #include "KeyNoteData.hpp"
 #include "Game.hpp"
 #include "Mods.hpp"
@@ -19,6 +20,114 @@
 #include "ChartParser.hpp"
 #include "MusicManager.hpp"
 #include "mods/GameOfLife.hpp"
+
+class Character {
+private:
+    int x;
+    const int y;
+    const int width;
+    const int height;
+    const int minX;
+    const int maxX;
+    SDL_Texture* textureLeft;   // 抬左腳的紋理
+    SDL_Texture* textureRight;  // 抬右腳的紋理
+    Uint32 lastTextureSwitchTime; // 上次紋理切換的時間
+    bool isLeftLegUp;           // 當前是否顯示抬左腳的圖片
+    Uint32 switchIntervalMs;    // 紋理切換間隔（毫秒）
+
+public:
+    Character(SDL_Renderer* renderer, int initialX, int fixedY, int w, int h,
+              int min_X, int max_X, const std::string& imagePathLeft,
+              const std::string& imagePathRight, Uint32 intervalMs)
+        : x(initialX), y(fixedY), width(w), height(h), minX(min_X), maxX(max_X),
+          textureLeft(nullptr), textureRight(nullptr),
+          lastTextureSwitchTime(SDL_GetTicks()), isLeftLegUp(true),
+          switchIntervalMs(intervalMs)
+    {
+        // 載入左腳抬起的紋理
+        SDL_Surface* surfaceLeft = IMG_Load(imagePathLeft.c_str());
+        if (!surfaceLeft) {
+            std::cerr << "IMG_Load CharacterLeft Error: " << IMG_GetError() << std::endl;
+            surfaceLeft = SDL_CreateRGBSurfaceWithFormat(0, w, h, 32, SDL_PIXELFORMAT_RGBA32);
+            if (surfaceLeft) {
+                SDL_FillRect(surfaceLeft, nullptr, SDL_MapRGB(surfaceLeft->format, 0, 255, 0)); // 綠色作為備用
+            } else {
+                std::cerr << "SDL_CreateRGBSurfaceWithFormat Error: " << SDL_GetError() << std::endl;
+            }
+        }
+        if (surfaceLeft) {
+            textureLeft = SDL_CreateTextureFromSurface(renderer, surfaceLeft);
+            SDL_FreeSurface(surfaceLeft);
+        }
+        if (!textureLeft) {
+            std::cerr << "SDL_CreateTextureFromSurface CharacterLeft Error: " << SDL_GetError() << std::endl;
+        }
+
+        // 載入右腳抬起的紋理
+        SDL_Surface* surfaceRight = IMG_Load(imagePathRight.c_str());
+        if (!surfaceRight) {
+            std::cerr << "IMG_Load CharacterRight Error: " << IMG_GetError() << std::endl;
+            surfaceRight = SDL_CreateRGBSurfaceWithFormat(0, w, h, 32, SDL_PIXELFORMAT_RGBA32);
+            if (surfaceRight) {
+                SDL_FillRect(surfaceRight, nullptr, SDL_MapRGB(surfaceRight->format, 0, 0, 255)); // 藍色作為備用
+            } else {
+                std::cerr << "SDL_CreateRGBSurfaceWithFormat Error: " << SDL_GetError() << std::endl;
+            }
+        }
+        if (surfaceRight) {
+            textureRight = SDL_CreateTextureFromSurface(renderer, surfaceRight);
+            SDL_FreeSurface(surfaceRight);
+        }
+        if (!textureRight) {
+            std::cerr << "SDL_CreateTextureFromSurface CharacterRight Error: " << SDL_GetError() << std::endl;
+        }
+    }
+
+    ~Character() {
+        if (textureLeft) {
+            SDL_DestroyTexture(textureLeft);
+        }
+        if (textureRight) {
+            SDL_DestroyTexture(textureRight);
+        }
+    }
+
+    void updatePosition(int mouseX, Uint32 currentTime) {
+        x = mouseX;
+        if (x < minX) {
+            x = minX;
+        }
+        if (x > maxX) {
+            x = maxX;
+        }
+
+        // 根據切換頻率更新紋理
+        if (currentTime - lastTextureSwitchTime >= switchIntervalMs) {
+            isLeftLegUp = !isLeftLegUp;
+            lastTextureSwitchTime = currentTime;
+        }
+    }
+
+    void render(SDL_Renderer* renderer) const {
+        SDL_Texture* currentTexture = isLeftLegUp ? textureLeft : textureRight;
+        if (!currentTexture) {
+            // 如果當前紋理無效，嘗試使用另一個紋理，或者乾脆不繪製
+            currentTexture = isLeftLegUp ? textureRight : textureLeft;
+            if (!currentTexture) return; // 兩個紋理都無效，不繪製
+        }
+
+        SDL_Rect destRect = {
+            x - width / 2,
+            y - height / 2,
+            width,
+            height
+        };
+        SDL_RenderCopy(renderer, currentTexture, nullptr, &destRect);
+    }
+
+    Character(const Character&) = delete;
+    Character& operator=(const Character&) = delete;
+};
 
 TTF_Font *large_font, *medium_font, *small_font;
 int SCREEN_WIDTH = 1024;
@@ -37,7 +146,6 @@ Renderer *gameRenderer =
 ChartParser *chartParser = new ChartParser(keyNotes);
 MusicManager *musicManager = new MusicManager();
 
-// 【新增】供 Renderer 存取 MouseNotes 的全局指標 (與 Renderer.hpp 中的 extern 宣告匹配)
 const std::vector<MouseNoteData>* mouseNotesPtr = nullptr;
 
 
@@ -109,7 +217,7 @@ void renderRoundedRect(SDL_Renderer *renderer, SDL_Rect rect, int radius,
 
 bool pointInRect(int x, int y, SDL_Rect rect) {
   return x >= rect.x && x < rect.x + rect.w && y >= rect.y &&
-         y < rect.y + rect.h;
+           y < rect.y + rect.h;
 }
 
 void showSettings(SDL_Renderer *renderer) {
@@ -218,7 +326,6 @@ void showSettings(SDL_Renderer *renderer) {
   double beatDuration = 60000.0 / chartParser->getBPM();
   MS_PER_FRAGMENT = beatDuration / chartParser->getFragmentsPerBeat();
   new (game) Game(LANES, FRAGMENTS, MS_PER_FRAGMENT, keyNotes);
-  // game->notes = generateRandomNotes(LANES, 500, 500, 70);
   new (gameRenderer) Renderer(*game, SCREEN_WIDTH, SCREEN_HEIGHT, renderer,
                               large_font, medium_font, small_font);
 
@@ -239,7 +346,7 @@ void showPauseMenu(SDL_Renderer *renderer) {
   SDL_Rect newGameButton = {SCREEN_WIDTH / 2 - 100, 230, 200, 60};
   SDL_Rect exitButton = {SCREEN_WIDTH / 2 - 100, 310, 200, 60};
 
-  int choice = 0; // 1=resume, 2=newgame, 3=exit
+  int choice = 0;
 
   while (running) {
     while (SDL_PollEvent(&e)) {
@@ -400,9 +507,6 @@ int main(int argc, char *argv[]) {
   SDL_Renderer *renderer = SDL_CreateRenderer(
       window, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
 
-
-
-
   if (!renderer) {
     std::cerr << "Renderer could not be created: " << SDL_GetError()
               << std::endl;
@@ -416,8 +520,38 @@ int main(int argc, char *argv[]) {
     return 1;
   }
 
+  const int CHARACTER_Y_POS = (int)(SCREEN_HEIGHT * 0.85);
+
+  // VVV 調整角色圖片大小參數 VVV
+  const int CHARACTER_WIDTH = 100;
+  const int CHARACTER_HEIGHT = 100;
+  // ^^^ 調整角色圖片大小參數 ^^^
+
+  const int CHARACTER_MIN_X = (int)(SCREEN_WIDTH * 0.1);
+  const int CHARACTER_MAX_X = (int)(SCREEN_WIDTH * 0.9);
+
+  // VVV 調整圖片切換頻率 (毫秒) VVV
+  const Uint32 CHARACTER_SWITCH_INTERVAL_MS = 200; // 0.2 秒 = 200 毫秒
+  // ^^^ 調整圖片切換頻率 (毫秒) ^^^
+
+  // VVV 圖片路徑 VVV
+  Character* character = new Character(
+      renderer,
+      SCREEN_WIDTH / 2,
+      CHARACTER_Y_POS,
+      CHARACTER_WIDTH,
+      CHARACTER_HEIGHT,
+      CHARACTER_MIN_X,
+      CHARACTER_MAX_X,
+      "res/img/CharacterLeft.png",  // 抬左腳圖片路徑
+      "res/img/CharacterRight.png", // 抬右腳圖片路徑
+      CHARACTER_SWITCH_INTERVAL_MS
+  );
+  // ^^^ 圖片路徑 ^^^
+
   currentState = GameState::SETTINGS;
   Uint32 currentTime = 0, lastFragmentTime = 0, gameStartTime = 0;
+  int mouseX = SCREEN_WIDTH / 2;
 
   while (running) {
     currentTime = SDL_GetTicks();
@@ -431,8 +565,12 @@ int main(int argc, char *argv[]) {
         if (event.window.event == SDL_WINDOWEVENT_RESIZED) {
           int newWidth = event.window.data1;
           int newHeight = event.window.data2;
+          SCREEN_WIDTH = newWidth;
+          SCREEN_HEIGHT = newHeight;
           gameRenderer->updateDimension(newWidth, newHeight);
         }
+      } else if (event.type == SDL_MOUSEMOTION) {
+          mouseX = event.motion.x;
       }
 
       switch (currentState) {
@@ -551,17 +689,14 @@ int main(int argc, char *argv[]) {
     switch (currentState) {
     case GameState::SETTINGS:
       showSettings(renderer);
-      // 載入譜面
       if (chartParser->load("./chart/test_chart.txt")) {
         std::cout << "[OK] Chart loaded successfully" << std::endl;
 
-        // 【新增】設定 MouseNotes 全局指標
         mouseNotesPtr = &chartParser->getMouseNotes();
 
         std::cout << "[INFO] Key notes: " << keyNotes.size() << std::endl;
-        std::cout << "[INFO] Mouse notes: " << mouseNotesPtr->size() << std::endl; // 使用 mouseNotesPtr
+        std::cout << "[INFO] Mouse notes: " << mouseNotesPtr->size() << std::endl;
 
-        // 載入音樂
         musicManager->loadMusic(chartParser->getMusicFile());
       } else {
         std::cerr << "[ERROR] Failed to load chart" << std::endl;
@@ -573,7 +708,7 @@ int main(int argc, char *argv[]) {
       showCountdown(renderer);
       gameStartTime = SDL_GetTicks();
       lastFragmentTime = gameStartTime;
-      musicManager->playMusic(0);  // 加這行：播放音樂一次
+      musicManager->playMusic(0);
       currentState = GameState::GAME;
       break;
 
@@ -584,11 +719,20 @@ int main(int argc, char *argv[]) {
 
       if (offsetMs >= MS_PER_FRAGMENT) {
         game->loadFragment(mystd::get<0>(getModMap()[MOD]),
-                           mystd::get<1>(getModMap()[MOD]));
+                             mystd::get<1>(getModMap()[MOD]));
         lastFragmentTime += MS_PER_FRAGMENT;
         offsetMs = 0;
       }
+
+      if (character) {
+          character->updatePosition(mouseX, currentTime); // 傳入 currentTime
+      }
+
       gameRenderer->render(renderer, offsetMs);
+
+      if (character) {
+          character->render(renderer);
+      }
 
       break;
     }
@@ -603,6 +747,8 @@ int main(int argc, char *argv[]) {
     Uint32 tmpTime = SDL_GetTicks();
     gameRenderer->fps = 1000.0f / (float)(tmpTime - currentTime);
   }
+
+  delete character;
 
   delete gameRenderer;
   delete game;
