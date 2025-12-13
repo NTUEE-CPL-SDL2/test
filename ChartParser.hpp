@@ -154,31 +154,56 @@ private:
         }
     }
     
+    // 修正版：支援和弦 (G1/R2 表示同時出現綠色1和紅色2)
     void parseMouseNoteToken(const std::string& token, std::size_t fragment) {
-        if (token.length() >= 2) {
-            char type = token[0];
+        // 檢查是否為和弦
+        if (token.find('/') != std::string::npos) {
+            std::stringstream ss(token);
+            std::string singleNoteStr;
+            
+            // 逐一解析和弦中的每個物件
+            while (std::getline(ss, singleNoteStr, '/')) {
+                singleNoteStr = trim(singleNoteStr);  // 移除空白
+                if (!singleNoteStr.empty()) {
+                    parseSingleMouseObject(singleNoteStr, fragment);
+                }
+            }
+        } else {
+            // 單一物件
+            parseSingleMouseObject(token, fragment);
+        }
+    }
+    
+    // 新增：解析單一 Mouse Object
+    void parseSingleMouseObject(const std::string& noteStr, std::size_t fragment) {
+        if (noteStr.length() >= 2) {
+            char type = noteStr[0];
             
             if (type == 'G' || type == 'R') {
                 try {
-                    int lane = std::stoi(token.substr(1)) - 1;
+                    int lane = std::stoi(noteStr.substr(1)) - 1;  // 1-4 轉成 0-3
                     int noteType = (type == 'G') ? 0 : 1;
                     
-                    if (lane >= 0 && lane < 4) { // 假設 LANES = 4
+                    if (lane >= 0 && lane < 4) {  // 假設 LANES = 4
                         mouseNotes.push_back({fragment, static_cast<std::size_t>(lane), noteType});
                     } else {
-                        // 警告訊息
-                        std::cerr << "[WARNING] Mouse Note lane out of bounds: " << (lane + 1) << " at fragment " << fragment << std::endl;
+                        std::cerr << "[WARNING] Mouse Note lane out of bounds: " << (lane + 1) 
+                                  << " at fragment " << fragment << std::endl;
                     }
                 } catch (const std::invalid_argument& e) {
-                    // 警告訊息
-                    std::cerr << "[WARNING] Invalid Mouse Note format (non-numeric lane): " << token << " at fragment " << fragment << std::endl;
+                    std::cerr << "[WARNING] Invalid Mouse Note format: " << noteStr 
+                              << " at fragment " << fragment << std::endl;
+                } catch (const std::out_of_range& e) {
+                    std::cerr << "[WARNING] Mouse Note lane number too large: " << noteStr 
+                              << " at fragment " << fragment << std::endl;
                 }
             }
         }
     }
 
 public:
-    ChartParser(mystd::vector<KeyNoteData>& keyNotes_) : bpm(120), offset(0), fragmentsPerBeat(4), keyNotes(keyNotes_) {}
+    ChartParser(mystd::vector<KeyNoteData>& keyNotes_) 
+        : bpm(120), offset(0), fragmentsPerBeat(4), keyNotes(keyNotes_) {}
     
     bool load(const std::string& filepath) {
         std::ifstream file(filepath);
@@ -215,9 +240,13 @@ public:
         file.close();
         
         qsort(keyNotes.begin(), keyNotes.end(), 
-            [](const KeyNoteData& a, const KeyNoteData& b) { return a.startFragment < b.startFragment; });
+            [](const KeyNoteData& a, const KeyNoteData& b) { 
+                return a.startFragment < b.startFragment; 
+            });
         qsort(mouseNotes.begin(), mouseNotes.end(),
-            [](const MouseNoteData& a, const MouseNoteData& b) { return a.startFragment < b.startFragment; });
+            [](const MouseNoteData& a, const MouseNoteData& b) { 
+                return a.startFragment < b.startFragment; 
+            });
         
         std::cout << "[OK] Chart loaded: " << filepath << std::endl;
         std::cout << "      BPM=" << bpm << ", Fragments/Beat=" << fragmentsPerBeat << std::endl;
@@ -226,7 +255,6 @@ public:
         return true;
     }
     
-    // const std::vector<KeyNoteData>& getKeyNotes() const { return keyNotes; }
     const std::vector<MouseNoteData>& getMouseNotes() const { return mouseNotes; }
     const std::string& getMusicFile() const { return musicFile; }
     int getBPM() const { return bpm; }
